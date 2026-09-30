@@ -12,8 +12,17 @@ RISK_SCORES = {
 
 
 def determine_severity(ai_result):
-    return max(
-        (RISK_SCORES[risk] for risk in ai_result["risk_indicators"]),
-        default=1
-    )
 
+    severity = 1
+    for risk in ai_result["risk_indicators"]:
+        severity = max(severity, RISK_SCORES[risk])
+    return severity
+
+test = {
+    "risk_indicators": ["fire", "smoke"]
+}
+
+print(determine_severity(test))
+print(determine_severity({"risk_indicators": ["active_leak"]}))
+print(determine_severity({"risk_indicators": ["smoke", "flooding"]}))
+print(determine_severity({"risk_indicators": []}))
