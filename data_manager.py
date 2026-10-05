@@ -1,9 +1,11 @@
 import json
 import re
+import os
+from tempfile import NamedTemporaryFile
 from pathlib import Path
 
 REPORTS_FILE = Path("reports.json")
-ID_FIELD = "complaint_id"
+COMPLAINT_STATUSES = ("Contractor contacted", "Pending Action", "Resolved")
 
 def load_reports():
     """Read REPORTS_FILE and return complaint list.
@@ -71,3 +73,33 @@ def save_report(complaint):
     if any(isinstance(report, list) and report and report[0] == complaint[0] for report in reports):
         raise ValueError("A report with this complaint ID already exists.")
     details = dict(complaint[6])
+    details.setdefault("status", "Pending Action")
+    if details["status"] not in COMPLAINT_STATUSES:
+        raise ValueError("Invalid complaint status.")
+    reports.append(complaint[:6] + [details])
+    write_reports(reports)
+    
+    
+    def write_reports(reports):
+        """Write a report list atomically, preserving the old file on failure.
+    
+        Used after validation by save_report() and update_complaint_status().
+        Return None on success and pass file errors to the caller.
+        """
+    
+        temporary_path = None
+        try:
+            with NamedTemporaryFile(
+                mode="w", encoding="utf-8", dir=REPORTS_FILE.parent,
+                prefix="reports-", suffix=".tmp", delete=False,
+            ) as file:
+                temporary_path = Path(file.name)
+                json.dump(reports, file, indent=2, ensure_ascii=False)
+                file.write("\n")
+                file.flush()
+                os.fsync(file.fileno())
+            os.replace(temporary_path, REPORTS_FILE)
+        finally:
+            if temporary_path is not None and temporary_path.exists():
+                temporary_path.unlink()
+    
