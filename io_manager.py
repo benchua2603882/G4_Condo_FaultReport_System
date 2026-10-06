@@ -1,3 +1,5 @@
+from datetime import datetime
+from pathlib import Path
 
 def show_menu(role="resident"):
     """Return a menu choice allowed for the authenticated session role.
@@ -89,3 +91,79 @@ def get_required_input(prompt):
             return answer
 
         print("This field cannot be empty. Please try again.")
+
+
+def collect_image_path():
+    """Ask whether to attach an image and validate the user's file path.
+
+    Return 'no_image' if declined. Otherwise, repeat invalid paths until an
+    existing JPG, JPEG, PNG, or WEBP file is selected, then return its absolute
+    path as a string. Relative paths start from this project's folder.
+    """
+
+    project_folder = Path(__file__).resolve().parent
+    allowed_extensions = {".jpg", ".jpeg", ".png", ".webp"}
+
+    # Ask whether the user wants to attach an image.
+    while True:
+        answer = input(
+            "Do you have an image to attach? (Y/N): "
+        ).strip().lower()
+
+        if answer == "n":
+            return "no_image"
+
+        if answer == "y":
+            break
+
+        print("Invalid input. Please enter Y or N.")
+
+    # If the user selected Y, ask for the image path.
+    while True:
+        image_path = input(
+            "Enter the image path "
+            "(e.g. test_images/leak.jpg): "
+        ).strip().strip("\"'")
+
+        if not image_path:
+            print("The image path cannot be empty.")
+            continue
+
+        path = Path(image_path).expanduser()
+
+        # Resolve relative paths from the folder containing this file.
+        if not path.is_absolute():
+            path = project_folder / path
+
+        if not path.is_file():
+            print("File not found. Please check the path.")
+            continue
+
+        if path.suffix.lower() not in allowed_extensions:
+            print("Please select a JPG, JPEG, PNG, or WEBP image.")
+            continue
+
+        return str(path.resolve())
+
+
+def collect_complaint(complaint_id):
+    """Ask for complaint details and return the initial six-item list.
+
+    Collect a name, phone number, description, and optional image path.
+    Use the supplied complaint ID and generate a local timestamp, then return
+    [complaint_id, name, phone_number, description, image_path, date_time].
+    """
+
+    print("\n--- Submit a Complaint ---")
+
+    # Ask and validate each question before continuing.
+    name = collect_name()
+    phone_number = collect_phone_number()
+    description = get_required_input("What is your complaint? ")
+    image_path = collect_image_path()
+
+    # Record the submission time using the computer's local timezone.
+    date_time = datetime.now().astimezone().isoformat(timespec="seconds")
+
+    # Complaint ID is first; submission date and time are last.
+    return [complaint_id, name, phone_number, description, image_path, date_time]
