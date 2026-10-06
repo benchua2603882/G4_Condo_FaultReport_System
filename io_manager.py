@@ -1,5 +1,6 @@
 from datetime import datetime
 from pathlib import Path
+import json
 
 def show_menu(role="resident"):
     """Return a menu choice allowed for the authenticated session role.
@@ -167,3 +168,19 @@ def collect_complaint(complaint_id):
 
     # Complaint ID is first; submission date and time are last.
     return [complaint_id, name, phone_number, description, image_path, date_time]
+
+def show_reports(reports):
+    """Display the supplied list of saved reports with numbered entries.
+
+    Format each report as indented JSON. Show an empty-list message when
+    there are no reports. Returns None and does not change the records.
+    """
+
+    if not reports:
+        show_message("\nNo saved reports found.")
+        return
+
+    show_message("\n--- Saved Reports ---")
+    for number, report in enumerate(reports, start=1):
+        show_message(f"\nReport {number}:")
+        show_message(json.dumps(report, indent=2, ensure_ascii=False))
