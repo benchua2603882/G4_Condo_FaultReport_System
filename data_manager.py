@@ -1,9 +1,11 @@
 import json
 import re
+import os
+from tempfile import NamedTemporaryFile
 from pathlib import Path
 
 REPORTS_FILE = Path("reports.json")
-ID_FIELD = "complaint_id"
+COMPLAINT_STATUSES = ("Contractor contacted", "Pending Action", "Resolved")
 
 def load_reports():
     """Read REPORTS_FILE and return complaint list.
@@ -47,3 +49,57 @@ def get_next_complaint_id():
                 highest_number = max(highest_number, int(match.group(1)))
 
     return f"complaint_{highest_number + 1:03d}"
+
+def save_report(complaint):
+    """Save a seven-item complaint list containing accepted processing details.
+
+    Require accepted=True and is_unclear=False in the processing details.
+    Reject an invalid record or duplicate ID. Load existing reports, append
+    the complaint, and write a temporary file before replacing REPORTS_FILE.
+    Return None on success; raise an error if validation or file access fails.
+    """
+
+    if (
+        not isinstance(complaint, list)
+        or len(complaint) != 7
+        or not isinstance(complaint[6], dict)
+        or complaint[6].get("accepted") is not True
+        or complaint[6].get("is_unclear") is not False
+    ):
+        raise ValueError("Only a processed, accepted complaint with no clarification pending can be saved.")
+
+    # A corrupt existing file raises an error; never overwrite it with an empty list.
+    reports = load_reports()
+    if any(isinstance(report, list) and report and report[0] == complaint[0] for report in reports):
+        raise ValueError("A report with this complaint ID already exists.")
+    details = dict(complaint[6])
+    details.setdefault("status", "Pending Action")
+    if details["status"] not in COMPLAINT_STATUSES:
+        raise ValueError("Invalid complaint status.")
+    reports.append(complaint[:6] + [details])
+    write_reports(reports)
+    
+    
+    def write_reports(reports):
+        """Write a report list atomically, preserving the old file on failure.
+    
+        Used after validation by save_report() and update_complaint_status().
+        Return None on success and pass file errors to the caller.
+        """
+    
+        temporary_path = None
+        try:
+            with NamedTemporaryFile(
+                mode="w", encoding="utf-8", dir=REPORTS_FILE.parent,
+                prefix="reports-", suffix=".tmp", delete=False,
+            ) as file:
+                temporary_path = Path(file.name)
+                json.dump(reports, file, indent=2, ensure_ascii=False)
+                file.write("\n")
+                file.flush()
+                os.fsync(file.fileno())
+            os.replace(temporary_path, REPORTS_FILE)
+        finally:
+            if temporary_path is not None and temporary_path.exists():
+                temporary_path.unlink()
+    
