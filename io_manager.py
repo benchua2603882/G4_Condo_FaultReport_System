@@ -201,3 +201,16 @@ def show_welcome():
         if choice in ("1", "2", "quit"):
             return choice
         print("Invalid input. Enter 1, 2, or quit.")
+
+def collect_admin_credentials():
+    """Return the entered username and password, or None to cancel login.
+
+    Hide password entry in an interactive terminal. Type back at the username
+    prompt to return to the welcome screen. Authentication happens in logic.
+    """
+
+    username = input("Admin username (or 'back' to cancel): ").strip()
+    if username.lower() == "back":
+        return None
+    password = getpass("Admin password: ")
+    return username, password
