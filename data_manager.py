@@ -30,6 +30,7 @@ def load_reports():
             if report[6].get("accepted") is True:
                 report[6].setdefault("status", "Pending Action")
     return reports
+
 def get_next_complaint_id():
     """Return the next complaint_001-style ID based on saved reports.
 
@@ -78,28 +79,41 @@ def save_report(complaint):
         raise ValueError("Invalid complaint status.")
     reports.append(complaint[:6] + [details])
     write_reports(reports)
-    
-    
-    def write_reports(reports):
-        """Write a report list atomically, preserving the old file on failure.
-    
-        Used after validation by save_report() and update_complaint_status().
-        Return None on success and pass file errors to the caller.
-        """
-    
-        temporary_path = None
-        try:
-            with NamedTemporaryFile(
-                mode="w", encoding="utf-8", dir=REPORTS_FILE.parent,
-                prefix="reports-", suffix=".tmp", delete=False,
-            ) as file:
-                temporary_path = Path(file.name)
-                json.dump(reports, file, indent=2, ensure_ascii=False)
-                file.write("\n")
-                file.flush()
-                os.fsync(file.fileno())
+       
+def write_reports(reports):
+    """Write a report list atomically, preserving the old file on failure.
+
+    Used after validation by save_report() and update_complaint_status().
+    Return None on success and pass file errors to the caller.
+    """
+
+    temporary_path = None
+    try:
+        with NamedTemporaryFile(
+            mode="w", encoding="utf-8", dir=REPORTS_FILE.parent,
+            prefix="reports-", suffix=".tmp", delete=False,
+        ) as file:
+            temporary_path = Path(file.name)
+            json.dump(reports, file, indent=2, ensure_ascii=False)
+            file.write("\n")
+            file.flush()
+            os.fsync(file.fileno())
             os.replace(temporary_path, REPORTS_FILE)
-        finally:
+    finally:
             if temporary_path is not None and temporary_path.exists():
                 temporary_path.unlink()
-    
+
+def filter_reports(priority):
+    """Load saved records and return those matching the supplied priority.
+
+    Accept a priority string such as 'high' or 'EMERGENCY', ignoring case.
+    Return a list of matching seven-item records, or [] if none match.
+    File-loading errors are passed to the caller.
+    """
+
+    return [
+        report for report in load_reports()
+        if isinstance(report, list) and len(report) == 7
+        and isinstance(report[6], dict)
+        and report[6].get("priority") == priority.upper()
+    ]
