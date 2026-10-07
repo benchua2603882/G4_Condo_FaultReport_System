@@ -1,6 +1,7 @@
 from datetime import datetime
 from pathlib import Path
 import json
+from getpass import getpass
 
 def show_menu(role="resident"):
     """Return a menu choice allowed for the authenticated session role.
@@ -184,3 +185,19 @@ def show_reports(reports):
     for number, report in enumerate(reports, start=1):
         show_message(f"\nReport {number}:")
         show_message(json.dumps(report, indent=2, ensure_ascii=False))
+
+def show_welcome():
+    """Ask whether the user is a resident or admin; return '1', '2', or 'quit'.
+
+    Repeat invalid choices. Selecting Admin still requires a successful login.
+    """
+
+    while True:
+        print("\nWelcome to the Condo Fault Reporting System")
+        print("1. Resident")
+        print("2. Admin")
+        print("Type 'quit' to exit.")
+        choice = input("Are you a resident or admin? ").strip().lower()
+        if choice in ("1", "2", "quit"):
+            return choice
+        print("Invalid input. Enter 1, 2, or quit.")
