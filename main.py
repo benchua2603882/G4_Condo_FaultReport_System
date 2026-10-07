@@ -62,6 +62,23 @@ def process_new_report():
     return complaint
 
 
+def view_reports():
+    """Load and display the latest saved reports without changing storage.
+
+    Adapted from HDB prototype app commit 6d688fb for the 7 October scope.
+    The I/O manager handles formatting and the empty-list message. Show a
+    readable error and return if storage cannot be read or contains bad JSON.
+    """
+
+    try:
+        reports = data_manager.load_reports()
+    except (OSError, ValueError) as error:
+        io_manager.show_message(f"Unable to load reports: {error}")
+        return
+
+    io_manager.show_reports(reports)
+
+
 def main():
     """Load saved reports and dispatch the resident menu until the user exits."""
     io_manager.show_message("Condo Fault Report System")
