@@ -230,3 +230,14 @@ def show_report_menu():
         if choice in ("1", "2", "3", "4", "5"):
             return choice
         show_message("Invalid input. Enter 1, 2, 3, 4, or 5.")
+
+def collect_report_id():
+    """Return the entered complaint ID, or None to go back to the main menu.
+
+    Accept 'back' or 'go back' to cancel. Repeat blank entries.
+    """
+
+    choice = get_required_input(
+        "Enter complaint_id (e.g. complaint_001), or 'back' to go back to main menu: "
+    )
+    return None if choice.lower() in ("back", "go back") else choice        
