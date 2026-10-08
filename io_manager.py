@@ -2,6 +2,7 @@ from datetime import datetime
 from pathlib import Path
 import json
 from getpass import getpass
+from copy import deepcopy
 
 def show_menu(role="resident"):
     """Return a menu choice allowed for the authenticated session role.
@@ -215,29 +216,6 @@ def collect_admin_credentials():
     password = getpass("Admin password: ")
     return username, password
 
-def show_menu(role="resident"):
-    """Return a menu choice allowed for the authenticated session role.
-
-    Residents can submit only; admins can also view/manage reports. Return
-    back to sign out or quit to exit, and repeat all invalid choices.
-    """
-
-    while True:
-        print(f"\nHDB Fault Reporting System - {role.title()}")
-        print("1. Submit a complaint")
-        if role == "admin":
-            print("2. View reports")
-        print("Type 'back' to return to the welcome screen, or 'quit' to exit.")
-
-        choice = input("Choose an option: ").strip().lower()
-
-        allowed_choices = ("1", "2", "back", "quit") if role == "admin" else ("1", "back", "quit")
-        if choice in allowed_choices:
-            return choice
-
-        print("Invalid input. Choose an option shown in your menu.")
-
-
 def show_report_menu():
     """Return a report action: status, view one, edit, delete, or back (1-5).
 
@@ -279,4 +257,51 @@ def choose_complaint_status():
             return None
         if choice in statuses:
             return statuses[choice]
-        show_message("Invalid input. Enter 1, 2, 3, or 4.")        
+        show_message("Invalid input. Enter 1, 2, 3, or 4.")
+
+def choose_complaint_status():
+    """Return the chosen status string, or None for Go back to the main menu.
+
+    Prompt with the three supported statuses and repeat invalid choices.
+    """
+
+    statuses = {"1": "Contractor contacted", "2": "Pending Action", "3": "Resolved"}
+    while True:
+        show_message("\n1. Contractor contacted\n2. Pending Action\n3. Resolved\n4. Go back")
+        choice = input("Choose a status: ").strip()
+        if choice == "4":
+            return None
+        if choice in statuses:
+            return statuses[choice]
+        show_message("Invalid input. Enter 1, 2, 3, or 4.")
+
+        
+def collect_report_edits(report):
+    """Return an edited copy on Save, or None on Go back without saving.
+    Allow name, phone, description, and image edits using existing validators.
+    Preserve ID, date, and processing details for the workflow to handle.
+    Selecting image and answering N removes the existing attachment.
+    """
+
+    draft = deepcopy(report)
+    while True:
+        show_reports([draft])
+        show_message(
+            "\n1. Edit name\n2. Edit phone number\n3. Edit description"
+            "\n4. Replace or remove image\n5. Save changes\n6. Go back without saving"
+        )
+        choice = input("Choose an option: ").strip()
+        if choice == "1":
+            draft[1] = collect_name()
+        elif choice == "2":
+            draft[2] = collect_phone_number()
+        elif choice == "3":
+            draft[3] = get_required_input("Enter the updated complaint: ")
+        elif choice == "4":
+            draft[4] = collect_image_path()
+        elif choice == "5":
+            return draft
+        elif choice == "6":
+            return None
+        else:
+            show_message("Invalid input. Enter a number from 1 to 6.")
