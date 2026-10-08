@@ -7,6 +7,25 @@ from pathlib import Path
 REPORTS_FILE = Path("reports.json")
 COMPLAINT_STATUSES = ("Contractor contacted", "Pending Action", "Resolved")
 
+def is_accepted_report(report):
+    """Check that a seven-item report has accepted, clear processing details."""
+
+    return (
+        isinstance(report, list)
+        and len(report) == 7
+        and isinstance(report[6], dict)
+        and report[6].get("accepted") is True
+        and report[6].get("is_unclear") is False
+    )
+
+def find_report_index(reports, complaint_id):
+    """Find a report's position in a loaded list, or raise an unknown-ID error."""
+
+    for index, report in enumerate(reports):
+        if isinstance(report, list) and len(report) == 7 and report[0] == complaint_id:
+            return index
+    raise ValueError(f"Complaint ID '{complaint_id}' was not found.")
+
 def load_reports():
     """Read REPORTS_FILE and return complaint list.
 
@@ -98,10 +117,10 @@ def write_reports(reports):
             file.write("\n")
             file.flush()
             os.fsync(file.fileno())
-            os.replace(temporary_path, REPORTS_FILE)
+        os.replace(temporary_path, REPORTS_FILE)
     finally:
-            if temporary_path is not None and temporary_path.exists():
-                temporary_path.unlink()
+         if temporary_path is not None and temporary_path.exists():
+            temporary_path.unlink()
 
 def filter_reports(priority):
     """Load saved records and return those matching the supplied priority.
