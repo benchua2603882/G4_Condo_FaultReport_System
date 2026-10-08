@@ -240,4 +240,20 @@ def collect_report_id():
     choice = get_required_input(
         "Enter complaint_id (e.g. complaint_001), or 'back' to go back to main menu: "
     )
-    return None if choice.lower() in ("back", "go back") else choice        
+    return None if choice.lower() in ("back", "go back") else choice
+
+def choose_complaint_status():
+    """Return the chosen status string, or None for Go back to the main menu.
+
+    Prompt with the three supported statuses and repeat invalid choices.
+    """
+
+    statuses = {"1": "Contractor contacted", "2": "Pending Action", "3": "Resolved"}
+    while True:
+        show_message("\n1. Contractor contacted\n2. Pending Action\n3. Resolved\n4. Go back")
+        choice = input("Choose a status: ").strip()
+        if choice == "4":
+            return None
+        if choice in statuses:
+            return statuses[choice]
+        show_message("Invalid input. Enter 1, 2, 3, or 4.")        
