@@ -81,6 +81,53 @@ def view_reports():
 
     io_manager.show_reports(reports)
 
+def select_report(reports):
+    """Prompt for an existing report ID and load its current saved record.
+
+    Retry IDs missing from the supplied list. Return None on Go back or
+    storage errors. Reload the selected record before editing or deleting it.
+    """
+
+    while True:
+        complaint_id = io_manager.collect_report_id()
+        if complaint_id is None:
+            return None
+        try:
+            data_manager.find_report_index(reports, complaint_id)
+        except ValueError:
+            io_manager.show_message("Complaint ID not found. Please try again.")
+            continue
+        try:
+            return data_manager.get_report(complaint_id)
+        except (OSError, ValueError) as error:
+            io_manager.show_message(f"Unable to load complaint: {error}")
+            return None
+
+def update_report_status(reports):
+    """Select a saved complaint by ID and persist the selected status.
+
+    Take the currently loaded report list and retry unknown IDs. Return True
+    after saving, or False for Go back or a storage error.
+    """
+
+    report = select_report(reports)
+    if report is None:
+        return False
+    complaint_id = report[0]
+
+    status = io_manager.choose_complaint_status()
+    if status is None:
+        return False
+    try:
+        data_manager.update_complaint_status(complaint_id, status)
+    except (OSError, ValueError) as error:
+        io_manager.show_message(f"Unable to update complaint status: {error}")
+        return False
+    io_manager.show_message(f"Complaint {complaint_id} status updated to {status}.")
+    return True
+
+
+
 
 def main():
     """Start the application and handle menu choices until the user quits.
