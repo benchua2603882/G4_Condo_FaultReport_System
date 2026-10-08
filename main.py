@@ -1,3 +1,6 @@
+import logging
+from pathlib import Path
+
 import ai_manager
 import data_manager
 import io_manager
@@ -80,26 +83,56 @@ def view_reports():
 
 
 def main():
-    """Load saved reports and dispatch the resident menu until the user exits."""
-    io_manager.show_message("Condo Fault Report System")
+    """Start the application and handle menu choices until the user quits.
 
+    Configure logging and load records, then ask for Resident or Admin.
+    Authenticate admins before permitting report management. Back clears
+    the role; quit exits. Take no arguments and return None when finished.
+    """
+
+    logging.basicConfig(
+        filename=Path(__file__).resolve().parent / "application.log",
+        level=logging.ERROR,
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    )
     try:
-        reports = data_manager.load_reports()
-        io_manager.show_message(f"Saved reports: {len(reports)}")
+        data_manager.load_reports()
     except (OSError, ValueError) as error:
-        io_manager.show_message(f"Unable to load reports: {error}")
-        return
+        io_manager.show_message(f"Unable to load saved reports: {error}")
 
+    role = None
     while True:
-        choice = io_manager.show_menu(role="resident")
+        if role is None:
+            welcome_choice = io_manager.show_welcome()
+            if welcome_choice == "quit":
+                io_manager.show_goodbye()
+                break
+            if welcome_choice == "1":
+                role = "resident"
+            else:
+                credentials = io_manager.collect_admin_credentials()
+                if credentials is None:
+                    continue
+                if not logic_manager.authenticate_admin(*credentials):
+                    io_manager.show_message("Invalid username or password. Please try again.")
+                    continue
+                role = "admin"
+                io_manager.show_message("Admin login successful.")
 
-        if choice == "1":
-            process_new_report()
-        elif choice in ("back", "quit"):
-            # Back exits until the welcome/login helpers are integrated.
+        choice = io_manager.show_menu(role)
+
+        if choice == "quit":
             io_manager.show_goodbye()
             break
 
+        elif choice == "back":
+            role = None
+
+        elif choice == "1":
+            process_new_report()
+
+        elif choice == "2" and role == "admin":
+            view_reports()
 
 if __name__ == "__main__":
     main()
