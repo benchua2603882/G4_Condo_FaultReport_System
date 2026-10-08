@@ -214,3 +214,19 @@ def collect_admin_credentials():
         return None
     password = getpass("Admin password: ")
     return username, password
+
+def show_report_menu():
+    """Return a report action: status, view one, edit, delete, or back (1-5).
+
+    Repeat invalid choices. Takes no arguments and does not change reports.
+    """
+
+    while True:
+        show_message(
+            "\n1. Update complaint status\n2. View complaint by ID"
+            "\n3. Edit complaint\n4. Delete complaint\n5. Go back to main menu"
+        )
+        choice = input("Choose an option: ").strip()
+        if choice in ("1", "2", "3", "4", "5"):
+            return choice
+        show_message("Invalid input. Enter 1, 2, 3, 4, or 5.")
