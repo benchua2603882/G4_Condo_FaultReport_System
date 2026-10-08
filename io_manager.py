@@ -305,3 +305,18 @@ def collect_report_edits(report):
             return None
         else:
             show_message("Invalid input. Enter a number from 1 to 6.")
+
+def confirm_report_deletion(report):
+    """Show the selected report and return True only for an explicit Y.
+
+    N or back cancels deletion. Repeat other responses without changing data.
+    """
+
+    show_reports([report])
+    while True:
+        answer = input(f"Delete complaint {report[0]} permanently? (Y/N): ").strip().lower()
+        if answer == "y":
+            return True
+        if answer in ("n", "back", "go back"):
+            return False
+        show_message("Invalid input. Enter Y or N.")
