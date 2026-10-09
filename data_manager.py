@@ -154,3 +154,41 @@ def filter_reports(priority):
         and isinstance(report[6], dict)
         and report[6].get("priority") == priority.upper()
     ]
+
+def get_report(complaint_id):
+    """Return a saved seven-item report by ID, or raise ValueError if missing."""
+
+    reports = load_reports()
+    return reports[find_report_index(reports, complaint_id)]
+
+
+def update_report(complaint):
+    """Replace an existing report with an accepted, validated seven-item record.
+
+    Keep its ID and original submission time. Return the saved record, or
+    raise an error without writing for invalid data or an unknown ID.
+    """
+
+    if not is_accepted_report(complaint) or complaint[6].get("status") not in COMPLAINT_STATUSES:
+        raise ValueError("Only accepted, clear reports with a valid status can be updated.")
+    reports = load_reports()
+    index = find_report_index(reports, complaint[0])
+    if complaint[5] != reports[index][5]:
+        raise ValueError("The original submission time cannot be changed.")
+    reports[index] = complaint
+    write_reports(reports)
+    return complaint
+
+
+def delete_report(complaint_id):
+    """Remove one report by ID and return it after the file is safely written.
+
+    The caller must obtain user confirmation first. Raise ValueError for an
+    unknown ID and propagate storage errors without replacing existing data.
+    """
+
+    reports = load_reports()
+    index = find_report_index(reports, complaint_id)
+    deleted = reports.pop(index)
+    write_reports(reports)
+    return deleted
