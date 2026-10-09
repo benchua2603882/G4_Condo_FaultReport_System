@@ -69,6 +69,12 @@ def analyze_complaint(complaint):
     type and re-raise the error so main.py can show a message and continue.
     """
 
+    try:
+        return request_analysis(complaint)
+    except Exception as error:
+        # Avoid logging residents' text or API error bodies containing credentials.
+        logging.getLogger(__name__).error("Complaint analysis failed (%s)", type(error).__name__)
+        raise
 
 def request_analysis(complaint):
     """Build a Gemini request from the complaint and validate its JSON response.
