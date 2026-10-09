@@ -2,6 +2,7 @@ import os
 import json
 import logging
 from google import genai
+from google.genai import types
 from PIL import Image
 
 FAULT_CATEGORIES = ["plumbing", "lift", "electrical", "general maintenance"]
@@ -85,7 +86,6 @@ def request_analysis(complaint):
     Invalid input, API failures, or invalid responses raise an error.
     """
 
-    from google import genai
 
     if not isinstance(complaint, list) or len(complaint) != 6:      #complaint must be a py list and contain 6 items
         raise ValueError("A complaint must contain exactly six fields.")
