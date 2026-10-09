@@ -22,10 +22,10 @@ def analyze_report(complaint):
 def process_new_report():
     """Run one complaint through the I/O, AI, logic, and data managers.
 
-    Take no arguments; collect input from the user. Append accepted AI/logic
-    details to the original list, save it, and return the seven-item record.
-    Show a message and return None if analysis fails, the report needs
-    clarification, or saving fails.
+    Take no arguments; collect input from the user. Append accepted or
+    manual-review AI/logic details to the original list, save it, and
+    return the seven-item record. Show a message and return None if the
+    report needs clarification from the resident, or if saving fails.
     """
 
     try:
@@ -40,18 +40,25 @@ def process_new_report():
     io_manager.show_message(complaint)
 
     io_manager.show_message("\nSending complaint to Gemini for analysis...")
-    try:
-        processed = analyze_report(complaint)
-    except Exception as error:
-        # Report the failure and let the user return to the menu.
-        io_manager.show_message(f"AI analysis failed: {error}")
-        io_manager.show_message("Complaint not saved. Please try again.")
-        return None
+    processed = analyze_report(complaint)
 
-    if not processed["accepted"]:
+    if not processed["accepted"] and not processed.get("manual_input_required"):
+        # Unclear report: the resident's input, not a system failure — ask them to resubmit.
         io_manager.show_message(processed["reason"])
         io_manager.show_message("Complaint not saved.")
         return None
+
+    if not processed["accepted"]:
+        # AI was unavailable: save it anyway, flagged for admin to classify manually.
+        io_manager.show_message(processed["reason"])
+        complaint.append(processed)
+        try:
+            data_manager.save_report(complaint)
+        except (OSError, ValueError) as error:
+            io_manager.show_message(f"Unable to save complaint: {error}")
+            return None
+        io_manager.show_message(f"\nComplaint {complaint[0]} saved for manual review.")
+        return complaint
 
     # Preserve the original six fields and append the AI/logic results.
     complaint.append(processed)
