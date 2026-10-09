@@ -62,6 +62,13 @@ def validate_response(report):
         raise ValueError("Gemini returned invalid boolean fields.")
     return report
 
+def analyze_complaint(complaint):
+    """Analyze a six-item complaint list and return the validated AI dictionary.
+
+    Delegate the API work to request_analysis(). If it fails, log the error
+    type and re-raise the error so main.py can show a message and continue.
+    """
+
 
 def request_analysis(complaint):
     """Build a Gemini request from the complaint and validate its JSON response.
