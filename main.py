@@ -8,12 +8,14 @@ import logic_manager
 
 
 def analyze_report(complaint):
-    """Run Gemini and business rules; give accepted reports their initial status."""
+    """Run Gemini and business rules; give accepted or manual-review reports their initial status."""
 
     ai_result = ai_manager.analyze_complaint(complaint)
     processed = logic_manager.process_fault(ai_result)
     if processed["accepted"]:
         processed["status"] = "Pending Action"
+    elif processed.get("manual_input_required"):
+        processed["status"] = "Needs Manual Review"
     return processed
 
 
