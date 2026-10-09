@@ -122,6 +122,24 @@ def write_reports(reports):
          if temporary_path is not None and temporary_path.exists():
             temporary_path.unlink()
 
+def update_complaint_status(complaint_id, status):
+    """Update one accepted report by ID and persist its new status.
+
+    Accept one of COMPLAINT_STATUSES. Return the updated record; raise
+    ValueError for an unknown ID, invalid status, or unaccepted record.
+    File errors propagate without replacing the original data.
+    """
+
+    if status not in COMPLAINT_STATUSES:
+        raise ValueError("Invalid complaint status.")
+    reports = load_reports()
+    report = reports[find_report_index(reports, complaint_id)]
+    if not is_accepted_report(report):
+        raise ValueError("Only accepted, clear reports can be updated.")
+    report[6]["status"] = status
+    write_reports(reports)
+    return report
+
 def filter_reports(priority):
     """Load saved records and return those matching the supplied priority.
 
