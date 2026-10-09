@@ -112,6 +112,45 @@ def select_report(reports):
             io_manager.show_message(f"Unable to load complaint: {error}")
             return None
 
+def edit_report(reports):
+    """Edit a selected complaint and save only after any fault changes are accepted.
+
+    Contact-only edits preserve analysis/status. Description or image edits
+    rerun AI and business rules; accepted changes reset status to Pending
+    Action, AI-unavailable changes are saved flagged for manual review, and
+    unclear changes keep the original report intact. Return False on Go back.
+    """
+
+    original = select_report(reports)
+    if original is None:
+        return False
+    draft = io_manager.collect_report_edits(original)
+    if draft is None:
+        return False
+    if draft == original:
+        io_manager.show_message("No changes to save.")
+        return True
+
+    if draft[3:5] != original[3:5]:
+        io_manager.show_message("Analyzing the updated complaint with Gemini...")
+        processed = analyze_report(draft[:6])
+        if not processed["accepted"] and not processed.get("manual_input_required"):
+            io_manager.show_message(processed["reason"])
+            io_manager.show_message("Changes not saved. Original complaint kept.")
+            return True
+        if not processed["accepted"]:
+            io_manager.show_message(processed["reason"])
+            io_manager.show_message("Changes saved, flagged for manual review.")
+        draft[6] = processed
+
+    try:
+        data_manager.update_report(draft)
+    except (OSError, ValueError) as error:
+        io_manager.show_message(f"Unable to save changes: {error}")
+        return False
+    io_manager.show_message(f"Complaint {draft[0]} updated successfully.")
+    return True
+
 def update_report_status(reports):
     """Select a saved complaint by ID and persist the selected status.
 
