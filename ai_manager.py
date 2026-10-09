@@ -62,19 +62,6 @@ def validate_response(report):
         raise ValueError("Gemini returned invalid boolean fields.")
     return report
 
-def analyze_complaint(complaint):
-    """Analyze a six-item complaint list and return the validated AI dictionary.
-
-    Delegate the API work to request_analysis(). If it fails, log the error
-    type and re-raise the error so main.py can show a message and continue.
-    """
-
-    try:
-        return request_analysis(complaint)
-    except Exception as error:
-        # Avoid logging residents' text or API error bodies containing credentials.
-        logging.getLogger(__name__).error("Complaint analysis failed (%s)", type(error).__name__)
-        raise
 
 def request_analysis(complaint):
     """Build a Gemini request from the complaint and validate its JSON response.
@@ -84,6 +71,8 @@ def request_analysis(complaint):
     Return a validated report dictionary and close the client/image resources.
     Invalid input, API failures, or invalid responses raise an error.
     """
+
+    from google import genai
 
     if not isinstance(complaint, list) or len(complaint) != 6:      #complaint must be a py list and contain 6 items
         raise ValueError("A complaint must contain exactly six fields.")
