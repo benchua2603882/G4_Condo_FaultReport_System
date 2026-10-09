@@ -64,14 +64,21 @@ def validate_response(report):
     return report
 
 def analyze_complaint(complaint):
-    """Analyze a six-item complaint list and return the validated AI dictionary.
+    """Analyze a six-item complaint list and return either a validated AI
+    dictionary or an AI-unavailable marker for manual review.
 
-    Delegate the API work to request_analysis(). If it fails, log the error
-    type and re-raise the error so main.py can show a message and continue.
+    Delegate the API work to request_analysis(). If credentials are
+    missing, the API call fails, or the response doesn't validate, log the
+    error type and return an "ai_available": False result instead of
+    raising, so main.py can route the complaint to manual review rather
+    than crash.
     """
 
     try:
-        return request_analysis(complaint)
+        result = request_analysis(complaint)
+        result["ai_available"] = True
+        return result
+        
     except Exception as error:
         # Avoid logging residents' text or API error bodies containing credentials.
         logging.getLogger(__name__).error("Complaint analysis failed (%s)", type(error).__name__)
