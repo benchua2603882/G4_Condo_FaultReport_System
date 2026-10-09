@@ -73,8 +73,6 @@ def request_analysis(complaint):
     """
 
     from google import genai
-    from google.genai import types
-    from PIL import Image
 
     if not isinstance(complaint, list) or len(complaint) != 6:      #complaint must be a py list and contain 6 items
         raise ValueError("A complaint must contain exactly six fields.")
