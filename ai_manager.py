@@ -1,4 +1,6 @@
 import os
+import json
+import logging
 from google import genai
 from PIL import Image
 
@@ -59,6 +61,40 @@ def validate_response(report):
     if any(type(report[field]) is not bool for field in ("common_area_hazard", "is_unclear")):
         raise ValueError("Gemini returned invalid boolean fields.")
     return report
+
+
+def request_analysis(complaint):
+    """Build a Gemini request from the complaint and validate its JSON response.
+
+    Expected list: [complaint_id, name, phone_number, description,
+    image_path, date_time]. Send only the description and optional image.
+    Return a validated report dictionary and close the client/image resources.
+    Invalid input, API failures, or invalid responses raise an error.
+    """
+
+    from google import genai
+    from google.genai import types
+    from PIL import Image
+
+    if not isinstance(complaint, list) or len(complaint) != 6:      #complaint must be a py list and contain 6 items
+        raise ValueError("A complaint must contain exactly six fields.")
+
+    
+    description = complaint[3]
+    image_path = complaint[4]
+    # Contact details stay in the local complaint list. AI needs the fault details.
+    contents = [f"Resident description: {description}"]
+
+
+    # Keep the optional image open during analysis and always close it afterward.
+    image = None
+    try:
+        if image_path != "no_image":
+            image = Image.open(image_path)
+            contents.append(image)
+
+
+
 
 client = genai.Client()
 
