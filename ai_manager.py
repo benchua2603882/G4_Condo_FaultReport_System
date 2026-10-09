@@ -113,18 +113,7 @@ def request_analysis(complaint):
             image.close()
 
 
+    if not response.text:
+        raise ValueError("Gemini did not return a fault report.")
 
-
-
-client = genai.Client()
-
-image_path = "cow.jpg"
-image = Image.open(image_path)
-
-response = client.models.generate_content(
-    model=os.getenv("GEMINI_MODEL", "gemini-3.5-flash-lite"),
-    contents=[image, "What is this image?"],
-    config={"system_instruction": system_instruction},
-)
-
-print(response.text)
+    return validate_response(json.loads(response.text))
