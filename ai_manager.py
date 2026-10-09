@@ -94,6 +94,26 @@ def request_analysis(complaint):
             contents.append(image)
 
 
+        # Initialize only when submitting, using GEMINI_API_KEY or GOOGLE_API_KEY.
+        with genai.Client() as client:
+            response = client.models.generate_content(
+                model=os.getenv("GEMINI_MODEL", "gemini-3.5-flash-lite"),
+                contents=contents,
+                config=types.GenerateContentConfig(
+                    system_instruction=system_instruction,
+                    response_mime_type="application/json",
+                    response_json_schema=RESPONSE_SCHEMA,
+                    temperature=0.1,
+                ),
+            )
+
+
+    finally:
+        if image is not None:
+            image.close()
+
+
+
 
 
 client = genai.Client()
