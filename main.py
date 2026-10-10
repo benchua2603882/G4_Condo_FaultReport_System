@@ -112,6 +112,17 @@ def select_report(reports):
             io_manager.show_message(f"Unable to load complaint: {error}")
             return None
 
+def view_one_report(reports):
+    """Display one report selected by ID; return False if selection is cancelled."""
+
+    report = select_report(reports)
+    if report is None:
+        return False
+    io_manager.show_reports([report])
+    return True
+
+
+
 def edit_report(reports):
     """Edit a selected complaint and save only after any fault changes are accepted.
 
@@ -150,6 +161,24 @@ def edit_report(reports):
         return False
     io_manager.show_message(f"Complaint {draft[0]} updated successfully.")
     return True
+
+def remove_report(reports):
+    """Delete a selected report only after confirmation; return False on Go back."""
+
+    report = select_report(reports)
+    if report is None:
+        return False
+    if not io_manager.confirm_report_deletion(report):
+        io_manager.show_message("Deletion cancelled.")
+        return True
+    try:
+        data_manager.delete_report(report[0])
+    except (OSError, ValueError) as error:
+        io_manager.show_message(f"Unable to delete complaint: {error}")
+        return False
+    io_manager.show_message(f"Complaint {report[0]} deleted.")
+    return True
+
 
 def update_report_status(reports):
     """Select a saved complaint by ID and persist the selected status.
