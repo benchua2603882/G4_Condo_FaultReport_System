@@ -93,7 +93,7 @@ def request_analysis(complaint):
     """
 
 
-    if not isinstance(complaint, list) or len(complaint) != 6:      #complaint must be a py list and contain 6 items
+    if not isinstance(complaint, list) or len(complaint) != 6:   
         raise ValueError("A complaint must contain exactly six fields.")
 
     if not os.getenv("GEMINI_API_KEY") and not os.getenv("GOOGLE_API_KEY"):
