@@ -30,7 +30,7 @@ RESPONSE_SCHEMA = {
 }
 
 system_instruction = """
-You are an AI assistant tasked with analyzing maintenance complaints for an HDB estate management system.
+You are an AI assistant tasked with analyzing maintenance complaints for a condo estate management system.
 Rewrite informal, broken, or poorly spelled language into clear, readable English.
 Preserve the resident's meaning; do not invent facts. Use the description and
 optional image to classify the fault and extract only reported or visible hazards.
@@ -64,14 +64,10 @@ def validate_response(report):
     return report
 
 def analyze_complaint(complaint):
-    """Analyze a six-item complaint list and return either a validated AI
-    dictionary or an AI-unavailable marker for manual review.
+    """Return validated AI details, or an unavailable marker for admin review.
 
-    Delegate the API work to request_analysis(). If credentials are
-    missing, the API call fails, or the response doesn't validate, log the
-    error type and return an "ai_available": False result instead of
-    raising, so main.py can route the complaint to manual review rather
-    than crash.
+    Delegate the API work to request_analysis(). If it fails, log the error
+    type without private API details and let the app queue manual review.
     """
 
     try:
