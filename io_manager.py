@@ -1,6 +1,7 @@
 from datetime import datetime
 from pathlib import Path
 import json
+from getpass import getpass
 
 def show_menu(role="resident"):
     """Return a menu choice allowed for the authenticated session role.
@@ -184,3 +185,98 @@ def show_reports(reports):
     for number, report in enumerate(reports, start=1):
         show_message(f"\nReport {number}:")
         show_message(json.dumps(report, indent=2, ensure_ascii=False))
+
+def show_welcome():
+    """Ask whether the user is a resident or admin; return '1', '2', or 'quit'.
+
+    Repeat invalid choices. Selecting Admin still requires a successful login.
+    """
+
+    while True:
+        print("\nWelcome to the Condo Fault Reporting System")
+        print("1. Resident")
+        print("2. Admin")
+        print("Type 'quit' to exit.")
+        choice = input("Are you a resident or admin? ").strip().lower()
+        if choice in ("1", "2", "quit"):
+            return choice
+        print("Invalid input. Enter 1, 2, or quit.")
+
+def collect_admin_credentials():
+    """Return the entered username and password, or None to cancel login.
+
+    Hide password entry in an interactive terminal. Type back at the username
+    prompt to return to the welcome screen. Authentication happens in logic.
+    """
+
+    username = input("Admin username (or 'back' to cancel): ").strip()
+    if username.lower() == "back":
+        return None
+    password = getpass("Admin password: ")
+    return username, password
+
+def show_menu(role="resident"):
+    """Return a menu choice allowed for the authenticated session role.
+
+    Residents can submit only; admins can also view/manage reports. Return
+    back to sign out or quit to exit, and repeat all invalid choices.
+    """
+
+    while True:
+        print(f"\nHDB Fault Reporting System - {role.title()}")
+        print("1. Submit a complaint")
+        if role == "admin":
+            print("2. View reports")
+        print("Type 'back' to return to the welcome screen, or 'quit' to exit.")
+
+        choice = input("Choose an option: ").strip().lower()
+
+        allowed_choices = ("1", "2", "back", "quit") if role == "admin" else ("1", "back", "quit")
+        if choice in allowed_choices:
+            return choice
+
+        print("Invalid input. Choose an option shown in your menu.")
+
+
+def show_report_menu():
+    """Return a report action: status, view one, edit, delete, or back (1-5).
+
+    Repeat invalid choices. Takes no arguments and does not change reports.
+    """
+
+    while True:
+        show_message(
+            "\n1. Update complaint status\n2. View complaint by ID"
+            "\n3. Edit complaint\n4. Delete complaint\n5. Go back to main menu"
+        )
+        choice = input("Choose an option: ").strip()
+        if choice in ("1", "2", "3", "4", "5"):
+            return choice
+        show_message("Invalid input. Enter 1, 2, 3, 4, or 5.")
+
+def collect_report_id():
+    """Return the entered complaint ID, or None to go back to the main menu.
+
+    Accept 'back' or 'go back' to cancel. Repeat blank entries.
+    """
+
+    choice = get_required_input(
+        "Enter complaint_id (e.g. complaint_001), or 'back' to go back to main menu: "
+    )
+    return None if choice.lower() in ("back", "go back") else choice
+
+def choose_complaint_status():
+    """Return the chosen status string, or None for Go back to the main menu.
+
+    Prompt with the three supported statuses and repeat invalid choices.
+    """
+
+    statuses = {"1": "Contractor contacted", "2": "Pending Action", "3": "Resolved"}
+    while True:
+        show_message("\n1. Contractor contacted\n2. Pending Action\n3. Resolved\n4. Go back")
+        choice = input("Choose a status: ").strip()
+        if choice == "4":
+            return None
+        if choice in statuses:
+            return statuses[choice]
+        show_message("Invalid input. Enter 1, 2, 3, or 4.")        

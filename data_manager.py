@@ -7,6 +7,25 @@ from pathlib import Path
 REPORTS_FILE = Path("reports.json")
 COMPLAINT_STATUSES = ("Contractor contacted", "Pending Action", "Resolved")
 
+def is_accepted_report(report):
+    """Check that a seven-item report has accepted, clear processing details."""
+
+    return (
+        isinstance(report, list)
+        and len(report) == 7
+        and isinstance(report[6], dict)
+        and report[6].get("accepted") is True
+        and report[6].get("is_unclear") is False
+    )
+
+def find_report_index(reports, complaint_id):
+    """Find a report's position in a loaded list, or raise an unknown-ID error."""
+
+    for index, report in enumerate(reports):
+        if isinstance(report, list) and len(report) == 7 and report[0] == complaint_id:
+            return index
+    raise ValueError(f"Complaint ID '{complaint_id}' was not found.")
+
 def load_reports():
     """Read REPORTS_FILE and return complaint list.
 
@@ -30,6 +49,7 @@ def load_reports():
             if report[6].get("accepted") is True:
                 report[6].setdefault("status", "Pending Action")
     return reports
+
 def get_next_complaint_id():
     """Return the next complaint_001-style ID based on saved reports.
 
@@ -78,28 +98,97 @@ def save_report(complaint):
         raise ValueError("Invalid complaint status.")
     reports.append(complaint[:6] + [details])
     write_reports(reports)
-    
-    
-    def write_reports(reports):
-        """Write a report list atomically, preserving the old file on failure.
-    
-        Used after validation by save_report() and update_complaint_status().
-        Return None on success and pass file errors to the caller.
-        """
-    
-        temporary_path = None
-        try:
-            with NamedTemporaryFile(
-                mode="w", encoding="utf-8", dir=REPORTS_FILE.parent,
-                prefix="reports-", suffix=".tmp", delete=False,
-            ) as file:
-                temporary_path = Path(file.name)
-                json.dump(reports, file, indent=2, ensure_ascii=False)
-                file.write("\n")
-                file.flush()
-                os.fsync(file.fileno())
-            os.replace(temporary_path, REPORTS_FILE)
-        finally:
-            if temporary_path is not None and temporary_path.exists():
-                temporary_path.unlink()
-    
+       
+def write_reports(reports):
+    """Write a report list atomically, preserving the old file on failure.
+
+    Used after validation by save_report() and update_complaint_status().
+    Return None on success and pass file errors to the caller.
+    """
+
+    temporary_path = None
+    try:
+        with NamedTemporaryFile(
+            mode="w", encoding="utf-8", dir=REPORTS_FILE.parent,
+            prefix="reports-", suffix=".tmp", delete=False,
+        ) as file:
+            temporary_path = Path(file.name)
+            json.dump(reports, file, indent=2, ensure_ascii=False)
+            file.write("\n")
+            file.flush()
+            os.fsync(file.fileno())
+        os.replace(temporary_path, REPORTS_FILE)
+    finally:
+         if temporary_path is not None and temporary_path.exists():
+            temporary_path.unlink()
+
+def update_complaint_status(complaint_id, status):
+    """Update one accepted report by ID and persist its new status.
+
+    Accept one of COMPLAINT_STATUSES. Return the updated record; raise
+    ValueError for an unknown ID, invalid status, or unaccepted record.
+    File errors propagate without replacing the original data.
+    """
+
+    if status not in COMPLAINT_STATUSES:
+        raise ValueError("Invalid complaint status.")
+    reports = load_reports()
+    report = reports[find_report_index(reports, complaint_id)]
+    if not is_accepted_report(report):
+        raise ValueError("Only accepted, clear reports can be updated.")
+    report[6]["status"] = status
+    write_reports(reports)
+    return report
+
+def filter_reports(priority):
+    """Load saved records and return those matching the supplied priority.
+
+    Accept a priority string such as 'high' or 'EMERGENCY', ignoring case.
+    Return a list of matching seven-item records, or [] if none match.
+    File-loading errors are passed to the caller.
+    """
+
+    return [
+        report for report in load_reports()
+        if isinstance(report, list) and len(report) == 7
+        and isinstance(report[6], dict)
+        and report[6].get("priority") == priority.upper()
+    ]
+
+def get_report(complaint_id):
+    """Return a saved seven-item report by ID, or raise ValueError if missing."""
+
+    reports = load_reports()
+    return reports[find_report_index(reports, complaint_id)]
+
+
+def update_report(complaint):
+    """Replace an existing report with an accepted, validated seven-item record.
+
+    Keep its ID and original submission time. Return the saved record, or
+    raise an error without writing for invalid data or an unknown ID.
+    """
+
+    if not is_accepted_report(complaint) or complaint[6].get("status") not in COMPLAINT_STATUSES:
+        raise ValueError("Only accepted, clear reports with a valid status can be updated.")
+    reports = load_reports()
+    index = find_report_index(reports, complaint[0])
+    if complaint[5] != reports[index][5]:
+        raise ValueError("The original submission time cannot be changed.")
+    reports[index] = complaint
+    write_reports(reports)
+    return complaint
+
+
+def delete_report(complaint_id):
+    """Remove one report by ID and return it after the file is safely written.
+
+    The caller must obtain user confirmation first. Raise ValueError for an
+    unknown ID and propagate storage errors without replacing existing data.
+    """
+
+    reports = load_reports()
+    index = find_report_index(reports, complaint_id)
+    deleted = reports.pop(index)
+    write_reports(reports)
+    return deleted
