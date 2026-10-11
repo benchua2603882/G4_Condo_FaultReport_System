@@ -8,24 +8,24 @@ import logic_manager
 
 
 def analyze_report(complaint):
-    """Run Gemini and business rules; give accepted or manual-review reports their initial status."""
+    """Run AI and rules; return accepted details or a manual-review marker."""
 
     ai_result = ai_manager.analyze_complaint(complaint)
     processed = logic_manager.process_fault(ai_result)
     if processed["accepted"]:
         processed["status"] = "Pending Action"
-    elif processed.get("manual_input_required"):
-        processed["status"] = "Needs Manual Review"
+    # Emergency instructions must be visible even if a later save fails.
+    if processed.get("emergency_action"):
+        io_manager.show_message(processed["emergency_action"])
     return processed
 
 
 def process_new_report():
     """Run one complaint through the I/O, AI, logic, and data managers.
 
-    Take no arguments; collect input from the user. Append accepted or
-    manual-review AI/logic details to the original list, save it, and
-    return the seven-item record. Show a message and return None if the
-    report needs clarification from the resident, or if saving fails.
+    Collect input and return the saved seven-item record. AI failures go to
+    reports.json as Pending Manual Review; accepted reports use Pending Action.
+    Return None for unclear reports, unexpected processing errors or failed writes.
     """
 
     try:
@@ -40,25 +40,48 @@ def process_new_report():
     io_manager.show_message(complaint)
 
     io_manager.show_message("\nSending complaint to Gemini for analysis...")
-    processed = analyze_report(complaint)
+    try:
+        processed = analyze_report(complaint)
+    except Exception as error:
+        # Report the failure and let the user return to the menu.
+        io_manager.show_message(f"AI analysis failed: {error}")
+        io_manager.show_message("Complaint not saved. Please try again.")
+        return None
 
-    if not processed["accepted"] and not processed.get("manual_input_required"):
-        # Unclear report: the resident's input, not a system failure — ask them to resubmit.
+    if processed.get("manual_input_required"):
+        report = complaint + [processed]
+        try:
+            data_manager.save_report(report)
+        except (OSError, ValueError) as error:
+            io_manager.show_message(f"Unable to save complaint for review: {error}")
+            return None
+        io_manager.show_message(
+            f"Complaint {complaint[0]} saved with status Pending Manual Review because AI analysis is unavailable."
+        )
+        return report
+
+    if not processed["accepted"]:
         io_manager.show_message(processed["reason"])
         io_manager.show_message("Complaint not saved.")
         return None
 
+    # Preserve the original six fields and append the AI/logic results.
+    complaint.append(processed)
+    try:
+        data_manager.save_report(complaint)
+    except (OSError, ValueError) as error:
+        io_manager.show_message(f"Unable to save complaint: {error}")
+        return None
+
+    io_manager.show_message(f"\nComplaint {complaint[0]} saved successfully.")
+    io_manager.show_message(processed["alert"])
+
+    return complaint
+
     if not processed["accepted"]:
-        # AI was unavailable: save it anyway, flagged for admin to classify manually.
         io_manager.show_message(processed["reason"])
-        complaint.append(processed)
-        try:
-            data_manager.save_report(complaint)
-        except (OSError, ValueError) as error:
-            io_manager.show_message(f"Unable to save complaint: {error}")
-            return None
-        io_manager.show_message(f"\nComplaint {complaint[0]} saved for manual review.")
-        return complaint
+        io_manager.show_message("Complaint not saved.")
+        return None
 
     # Preserve the original six fields and append the AI/logic results.
     complaint.append(processed)
@@ -174,15 +197,13 @@ def view_one_report(reports):
     io_manager.show_reports([report])
     return True
 
-
-
 def edit_report(reports):
     """Edit a selected complaint and save only after any fault changes are accepted.
 
     Contact-only edits preserve analysis/status. Description or image edits
-    rerun AI and business rules; accepted changes reset status to Pending
-    Action, AI-unavailable changes are saved flagged for manual review, and
-    unclear changes keep the original report intact. Return False on Go back.
+    rerun AI and business rules and reset status to Pending Action. If AI is
+    unavailable, offer manual admin approval. Failed or cancelled edits keep
+    the original report intact. Return False on Go back.
     """
 
     original = select_report(reports)
@@ -194,19 +215,28 @@ def edit_report(reports):
     if draft == original:
         io_manager.show_message("No changes to save.")
         return True
-
     if draft[3:5] != original[3:5]:
         io_manager.show_message("Analyzing the updated complaint with Gemini...")
-        processed = analyze_report(draft[:6])
-        if not processed["accepted"] and not processed.get("manual_input_required"):
+        try:
+            processed = analyze_report(draft[:6])
+        except Exception as error:
+            io_manager.show_message(f"Analysis failed; original complaint kept: {error}")
+            return True
+        if processed.get("manual_input_required"):
+            io_manager.show_message("AI analysis is unavailable. Review this edit manually or go back to keep the original.")
+            try:
+                processed = manually_analyze_report(draft)
+            except ValueError as error:
+                io_manager.show_message(f"Invalid review; original complaint kept: {error}")
+                return True
+            if processed is None:
+                io_manager.show_message("Changes not saved. Original complaint kept.")
+                return True
+        if not processed["accepted"]:
             io_manager.show_message(processed["reason"])
             io_manager.show_message("Changes not saved. Original complaint kept.")
             return True
-        if not processed["accepted"]:
-            io_manager.show_message(processed["reason"])
-            io_manager.show_message("Changes saved, flagged for manual review.")
         draft[6] = processed
-
     try:
         data_manager.update_report(draft)
     except (OSError, ValueError) as error:
@@ -255,9 +285,6 @@ def update_report_status(reports):
         return False
     io_manager.show_message(f"Complaint {complaint_id} status updated to {status}.")
     return True
-
-
-
 
 def main():
     """Start the application and handle menu choices until the user quits.
@@ -310,6 +337,9 @@ def main():
 
         elif choice == "2" and role == "admin":
             view_reports()
+
+        elif choice == "3" and role == "admin":
+            review_pending_reports()
 
 if __name__ == "__main__":
     main()
