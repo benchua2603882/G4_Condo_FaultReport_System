@@ -320,3 +320,67 @@ def confirm_report_deletion(report):
         if answer in ("n", "back", "go back"):
             return False
         show_message("Invalid input. Enter Y or N.")
+
+def choose_manual_option(prompt, options):
+    """Return one selected value, or None for the final Go back option."""
+
+    while True:
+        show_message(prompt)
+        for number, value in enumerate(options, 1):
+            show_message(f"{number}. {value}")
+        show_message(f"{len(options) + 1}. Go back without approving")
+        choice = input("Choose an option: ").strip().lower()
+        if choice in ("back", str(len(options) + 1)):
+            return None
+        if choice in [str(number) for number in range(1, len(options) + 1)]:
+            return options[int(choice) - 1]
+        show_message("Invalid choice. Choose an option shown above.")
+
+
+def collect_manual_analysis(complaint, categories, risks):
+    """Collect an admin's classification and explicit approval, or return None.
+
+    Show the original complaint, including its image path. Ask for a readable
+    summary, category, observed hazards and common-area risk. Never supply
+    default hazard guesses when AI is unavailable. Back cancels the review.
+    """
+
+    show_reports([complaint])
+    show_message("Review the original description and any attached image before approving.")
+    show_message("If details are insufficient, go back and leave the complaint awaiting review.")
+    summary = get_required_input("Readable issue summary (or 'back' to cancel): ")
+    if summary.lower() == "back":
+        return None
+    category = choose_manual_option("Fault category:", categories)
+    if category is None:
+        return None
+    while True:
+        show_message("Select only hazards supported by the complaint:")
+        for number, risk in enumerate(risks, 1):
+            show_message(f"{number}. {risk.replace('_', ' ')}")
+        show_message("0. No reported hazards\nback. Go back without approving")
+        choice = input("Hazard numbers separated by commas: ").strip().lower()
+        if choice == "back":
+            return None
+        if choice == "0":
+            selected_risks = []
+            break
+        choices = [item.strip() for item in choice.split(",")]
+        if all(item in [str(number) for number in range(1, len(risks) + 1)] for item in choices):
+            selected_risks = list(dict.fromkeys(risks[int(item) - 1] for item in choices))
+            break
+        show_message("Enter valid hazard numbers, 0 for none, or back.")
+    shared = choose_manual_option("Is there a hazard in a common area?", ["Yes", "No"])
+    if shared is None:
+        return None
+    analysis = {
+        "fault_category": category,
+        "summary": summary,
+        "risk_indicators": selected_risks,
+        "common_area_hazard": shared == "Yes",
+        "is_unclear": False,
+    }
+    show_message(json.dumps(analysis, indent=2))
+    if choose_manual_option("Confirm your review:", ["Approve complaint"]) is None:
+        return None
+    return analysis
