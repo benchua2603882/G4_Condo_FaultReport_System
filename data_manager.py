@@ -18,6 +18,17 @@ def is_accepted_report(report):
         and report[6].get("is_unclear") is False
     )
 
+def is_pending_review(report):
+    """Check that a saved complaint is explicitly awaiting manual classification."""
+
+    return (
+        isinstance(report, list) and len(report) == 7
+        and isinstance(report[6], dict)
+        and report[6].get("accepted") is False
+        and report[6].get("manual_input_required") is True
+        and report[6].get("status") == "Pending Manual Review"
+    )
+
 def find_report_index(reports, complaint_id):
     """Find a report's position in a loaded list, or raise an unknown-ID error."""
 
@@ -71,22 +82,17 @@ def get_next_complaint_id():
     return f"complaint_{highest_number + 1:03d}"
 
 def save_report(complaint):
-    """Save a seven-item complaint list containing accepted processing details.
+    """Save an accepted or explicitly pending-manual-review seven-item complaint.
 
-    Require accepted=True and is_unclear=False in the processing details.
+    Unclear/rejected AI results are excluded unless awaiting manual review.
     Reject an invalid record or duplicate ID. Load existing reports, append
     the complaint, and write a temporary file before replacing REPORTS_FILE.
     Return None on success; raise an error if validation or file access fails.
     """
 
-    if (
-        not isinstance(complaint, list)
-        or len(complaint) != 7
-        or not isinstance(complaint[6], dict)
-        or complaint[6].get("accepted") is not True
-        or complaint[6].get("is_unclear") is not False
-    ):
-        raise ValueError("Only a processed, accepted complaint with no clarification pending can be saved.")
+    pending = is_pending_review(complaint)
+    if not is_accepted_report(complaint) and not pending:
+        raise ValueError("Only accepted complaints or complaints pending manual review can be saved.")
 
     # A corrupt existing file raises an error; never overwrite it with an empty list.
     reports = load_reports()
@@ -94,7 +100,7 @@ def save_report(complaint):
         raise ValueError("A report with this complaint ID already exists.")
     details = dict(complaint[6])
     details.setdefault("status", "Pending Action")
-    if details["status"] not in COMPLAINT_STATUSES:
+    if not pending and details["status"] not in COMPLAINT_STATUSES:
         raise ValueError("Invalid complaint status.")
     reports.append(complaint[:6] + [details])
     write_reports(reports)
@@ -135,7 +141,7 @@ def update_complaint_status(complaint_id, status):
     reports = load_reports()
     report = reports[find_report_index(reports, complaint_id)]
     if not is_accepted_report(report):
-        raise ValueError("Only accepted, clear reports can be updated.")
+        raise ValueError("Review and approve this complaint using admin option 3 before changing its status.")
     report[6]["status"] = status
     write_reports(reports)
     return report
@@ -161,16 +167,17 @@ def get_report(complaint_id):
     reports = load_reports()
     return reports[find_report_index(reports, complaint_id)]
 
-
 def update_report(complaint):
-    """Replace an existing report with an accepted, validated seven-item record.
+    """Replace an existing report with an accepted or pending-review record.
 
     Keep its ID and original submission time. Return the saved record, or
     raise an error without writing for invalid data or an unknown ID.
     """
 
-    if not is_accepted_report(complaint) or complaint[6].get("status") not in COMPLAINT_STATUSES:
-        raise ValueError("Only accepted, clear reports with a valid status can be updated.")
+    if not is_pending_review(complaint) and (
+        not is_accepted_report(complaint) or complaint[6].get("status") not in COMPLAINT_STATUSES
+    ):
+        raise ValueError("Only accepted or pending-manual-review complaints can be updated.")
     reports = load_reports()
     index = find_report_index(reports, complaint[0])
     if complaint[5] != reports[index][5]:
@@ -178,7 +185,6 @@ def update_report(complaint):
     reports[index] = complaint
     write_reports(reports)
     return complaint
-
 
 def delete_report(complaint_id):
     """Remove one report by ID and return it after the file is safely written.
@@ -192,3 +198,23 @@ def delete_report(complaint_id):
     deleted = reports.pop(index)
     write_reports(reports)
     return deleted
+
+def load_pending_reviews():
+    """Return complaints in reports.json that still need manual review."""
+
+    return [report for report in load_reports() if is_pending_review(report)]
+
+def approve_pending_review(report):
+    """Replace one pending record with its approved result in a single atomic write."""
+
+    if not is_accepted_report(report) or report[6].get("status") != "Pending Action":
+        raise ValueError("Manual approval requires accepted, clear details.")
+    reports = load_reports()
+    index = find_report_index(reports, report[0])
+    if not is_pending_review(reports[index]):
+        raise ValueError("This complaint is no longer pending manual review.")
+    if reports[index][:6] != report[:6]:
+        raise ValueError("The pending complaint changed; reload it before approval.")
+    reports[index] = report
+    write_reports(reports)
+    return report
