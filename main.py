@@ -73,6 +73,59 @@ def process_new_report():
 
     return complaint
 
+def manually_analyze_report(complaint):
+    """Collect approved admin details and apply the usual severity/routing rules.
+
+    Return processed details marked as a manual review, or None on cancellation.
+    This workflow is called only from authenticated admin actions.
+    """
+
+    analysis = io_manager.collect_manual_analysis(
+        complaint, ai_manager.FAULT_CATEGORIES, ai_manager.RISK_INDICATORS
+    )
+    if analysis is None:
+        return None
+    processed = logic_manager.process_fault(ai_manager.validate_response(analysis))
+    processed["status"] = "Pending Action"
+    processed["review_source"] = "manual"
+    if processed.get("emergency_action"):
+        io_manager.show_message(processed["emergency_action"])
+    return processed
+
+def review_pending_reports():
+    """Let an authenticated admin select and approve queued complaints by ID."""
+
+    while True:
+        try:
+            pending = data_manager.load_pending_reviews()
+        except (OSError, ValueError) as error:
+            io_manager.show_message(f"Unable to load manual reviews: {error}")
+            return
+        if not pending:
+            io_manager.show_message("No complaints are awaiting manual review.")
+            return
+        io_manager.show_message("Complaints awaiting manual review:")
+        io_manager.show_reports(pending)
+        complaint_id = io_manager.collect_report_id()
+        if complaint_id is None:
+            return
+        try:
+            complaint = pending[data_manager.find_report_index(pending, complaint_id)]
+        except ValueError:
+            io_manager.show_message("Complaint ID not found. Please try again.")
+            continue
+        try:
+            processed = manually_analyze_report(complaint)
+            if processed is None:
+                io_manager.show_message("Review cancelled. Complaint remains awaiting review.")
+                return
+            data_manager.approve_pending_review(complaint[:6] + [processed])
+        except (OSError, ValueError) as error:
+            io_manager.show_message(f"Unable to approve complaint: {error}")
+            return
+        io_manager.show_message(f"Complaint {complaint_id} approved and saved with Pending Action status.")
+        io_manager.show_message(processed["alert"])
+
 
 def view_reports():
     """Load and display the latest saved reports without changing storage.
