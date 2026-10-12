@@ -78,24 +78,6 @@ def process_new_report():
 
     return complaint
 
-    if not processed["accepted"]:
-        io_manager.show_message(processed["reason"])
-        io_manager.show_message("Complaint not saved.")
-        return None
-
-    # Preserve the original six fields and append the AI/logic results.
-    complaint.append(processed)
-    try:
-        data_manager.save_report(complaint)
-    except (OSError, ValueError) as error:
-        io_manager.show_message(f"Unable to save complaint: {error}")
-        return None
-
-    io_manager.show_message(f"\nComplaint {complaint[0]} saved successfully.")
-    io_manager.show_message(processed["alert"])
-
-    return complaint
-
 def manually_analyze_report(complaint):
     """Collect approved admin details and apply the usual severity/routing rules.
 
