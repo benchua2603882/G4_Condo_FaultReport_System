@@ -151,20 +151,40 @@ def review_pending_reports():
 
 
 def view_reports():
-    """Load and display the latest saved reports without changing storage.
+    """Display saved reports and offer status, view, edit, and delete actions.
 
-    Adapted from HDB prototype app commit 6d688fb for the 7 October scope.
-    The I/O manager handles formatting and the empty-list message. Show a
-    readable error and return if storage cannot be read or contains bad JSON.
+    Reload after each update. After viewing one ID, show only the action menu
+    instead of immediately printing all reports again. Return None on Go back
+    or file errors. Input and output stay in the I/O manager.
     """
 
-    try:
-        reports = data_manager.load_reports()
-    except (OSError, ValueError) as error:
-        io_manager.show_message(f"Unable to load reports: {error}")
-        return
+    show_all_reports = True
+    while True:
+        try:
+            reports = data_manager.load_reports()
+        except (OSError, ValueError) as error:
+            io_manager.show_message(f"Unable to load reports: {error}")
+            return
 
-    io_manager.show_reports(reports)
+        if show_all_reports:
+            io_manager.show_reports(reports)
+        choice = io_manager.show_report_menu()
+        if choice == "5":
+            return
+        if not reports:
+            io_manager.show_message("No saved complaints are available. Submit a complaint from the main menu.")
+            continue
+        if choice == "1":
+            completed = update_report_status(reports)
+        elif choice == "2":
+            completed = view_one_report(reports)
+        elif choice == "3":
+            completed = edit_report(reports)
+        else:
+            completed = remove_report(reports)
+        if not completed:
+            return
+        show_all_reports = choice != "2"
 
 def select_report(reports):
     """Prompt for an existing report ID and load its current saved record.
