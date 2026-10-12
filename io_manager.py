@@ -5,10 +5,11 @@ from getpass import getpass
 from copy import deepcopy
 
 def show_menu(role="resident"):
-    """Return a menu choice allowed for the authenticated session role.
+    """Return a menu choice allowed for the current role.
 
-    Residents can submit only; admins can also view/manage reports. Return
-    back to sign out or quit to exit, and repeat all invalid choices.
+    Residents can submit complaints. Admins can also manage reports
+    and review pending complaints. Back signs out; quit exits.
+    Repeat invalid choices.
     """
 
     while True:
@@ -16,13 +17,21 @@ def show_menu(role="resident"):
         print(f"Condo Fault Reporting System - {role.title()}")
         print("========================================")
         print("1. Submit a complaint")
+
         if role == "admin":
             print("2. View reports")
+            print("3. Review complaints awaiting approval")
+
         print("Type 'back' to return to the welcome screen, or 'quit' to exit.")
 
         choice = input("Choose an option: ").strip().lower()
 
-        allowed_choices = ("1", "2", "back", "quit") if role == "admin" else ("1", "back", "quit")
+        allowed_choices = (
+            ("1", "2", "3", "back", "quit")
+            if role == "admin"
+            else ("1", "back", "quit")
+        )
+
         if choice in allowed_choices:
             return choice
 
