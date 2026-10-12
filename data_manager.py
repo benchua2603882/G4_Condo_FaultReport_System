@@ -4,7 +4,7 @@ import os
 from tempfile import NamedTemporaryFile
 from pathlib import Path
 
-REPORTS_FILE = Path("reports.json")
+REPORTS_FILE = Path(__file__).resolve().parent / "reports.json"
 COMPLAINT_STATUSES = ("Contractor contacted", "Pending Action", "Resolved")
 
 def is_accepted_report(report):
