@@ -1,9 +1,7 @@
 import os
 import json
 import logging
-from google import genai
-from google.genai import types
-from PIL import Image
+
 
 FAULT_CATEGORIES = ["plumbing", "lift", "electrical", "general maintenance"]
 RISK_INDICATORS = [
@@ -91,6 +89,10 @@ def request_analysis(complaint):
     Return a validated report dictionary and close the client/image resources.
     Invalid input, API failures, or invalid responses raise an error.
     """
+
+    from google import genai
+    from google.genai import types
+    from PIL import Image
 
 
     if not isinstance(complaint, list) or len(complaint) != 6:   

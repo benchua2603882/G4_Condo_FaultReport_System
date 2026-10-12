@@ -2,12 +2,14 @@ from datetime import datetime
 from pathlib import Path
 import json
 from getpass import getpass
+from copy import deepcopy
 
 def show_menu(role="resident"):
-    """Return a menu choice allowed for the authenticated session role.
+    """Return a menu choice allowed for the current role.
 
-    Residents can submit only; admins can also view/manage reports. Return
-    back to sign out or quit to exit, and repeat all invalid choices.
+    Residents can submit complaints. Admins can also manage reports
+    and review pending complaints. Back signs out; quit exits.
+    Repeat invalid choices.
     """
 
     while True:
@@ -15,13 +17,21 @@ def show_menu(role="resident"):
         print(f"Condo Fault Reporting System - {role.title()}")
         print("========================================")
         print("1. Submit a complaint")
+
         if role == "admin":
             print("2. View reports")
+            print("3. Review complaints awaiting approval")
+
         print("Type 'back' to return to the welcome screen, or 'quit' to exit.")
 
         choice = input("Choose an option: ").strip().lower()
 
-        allowed_choices = ("1", "2", "back", "quit") if role == "admin" else ("1", "back", "quit")
+        allowed_choices = (
+            ("1", "2", "3", "back", "quit")
+            if role == "admin"
+            else ("1", "back", "quit")
+        )
+
         if choice in allowed_choices:
             return choice
 
@@ -256,4 +266,113 @@ def choose_complaint_status():
             return None
         if choice in statuses:
             return statuses[choice]
-        show_message("Invalid input. Enter 1, 2, 3, or 4.")        
+        show_message("Invalid input. Enter 1, 2, 3, or 4.")
+
+def collect_report_edits(report):
+    """Return an edited copy on Save, or None on Go back without saving.
+    Allow name, phone, description, and image edits using existing validators.
+    Preserve ID, date, and processing details for the workflow to handle.
+    Selecting image and answering N removes the existing attachment.
+    """
+
+    draft = deepcopy(report)
+    while True:
+        show_reports([draft])
+        show_message(
+            "\n1. Edit name\n2. Edit phone number\n3. Edit description"
+            "\n4. Replace or remove image\n5. Save changes\n6. Go back without saving"
+        )
+        choice = input("Choose an option: ").strip()
+        if choice == "1":
+            draft[1] = collect_name()
+        elif choice == "2":
+            draft[2] = collect_phone_number()
+        elif choice == "3":
+            draft[3] = get_required_input("Enter the updated complaint: ")
+        elif choice == "4":
+            draft[4] = collect_image_path()
+        elif choice == "5":
+            return draft
+        elif choice == "6":
+            return None
+        else:
+            show_message("Invalid input. Enter a number from 1 to 6.")
+
+def confirm_report_deletion(report):
+    """Show the selected report and return True only for an explicit Y.
+
+    N or back cancels deletion. Repeat other responses without changing data.
+    """
+
+    show_reports([report])
+    while True:
+        answer = input(f"Delete complaint {report[0]} permanently? (Y/N): ").strip().lower()
+        if answer == "y":
+            return True
+        if answer in ("n", "back", "go back"):
+            return False
+        show_message("Invalid input. Enter Y or N.")
+
+def choose_manual_option(prompt, options):
+    """Return one selected value, or None for the final Go back option."""
+
+    while True:
+        show_message(prompt)
+        for number, value in enumerate(options, 1):
+            show_message(f"{number}. {value}")
+        show_message(f"{len(options) + 1}. Go back without approving")
+        choice = input("Choose an option: ").strip().lower()
+        if choice in ("back", str(len(options) + 1)):
+            return None
+        if choice in [str(number) for number in range(1, len(options) + 1)]:
+            return options[int(choice) - 1]
+        show_message("Invalid choice. Choose an option shown above.")
+
+
+def collect_manual_analysis(complaint, categories, risks):
+    """Collect an admin's classification and explicit approval, or return None.
+
+    Show the original complaint, including its image path. Ask for a readable
+    summary, category, observed hazards and common-area risk. Never supply
+    default hazard guesses when AI is unavailable. Back cancels the review.
+    """
+
+    show_reports([complaint])
+    show_message("Review the original description and any attached image before approving.")
+    show_message("If details are insufficient, go back and leave the complaint awaiting review.")
+    summary = get_required_input("Readable issue summary (or 'back' to cancel): ")
+    if summary.lower() == "back":
+        return None
+    category = choose_manual_option("Fault category:", categories)
+    if category is None:
+        return None
+    while True:
+        show_message("Select only hazards supported by the complaint:")
+        for number, risk in enumerate(risks, 1):
+            show_message(f"{number}. {risk.replace('_', ' ')}")
+        show_message("0. No reported hazards\nback. Go back without approving")
+        choice = input("Hazard numbers separated by commas: ").strip().lower()
+        if choice == "back":
+            return None
+        if choice == "0":
+            selected_risks = []
+            break
+        choices = [item.strip() for item in choice.split(",")]
+        if all(item in [str(number) for number in range(1, len(risks) + 1)] for item in choices):
+            selected_risks = list(dict.fromkeys(risks[int(item) - 1] for item in choices))
+            break
+        show_message("Enter valid hazard numbers, 0 for none, or back.")
+    shared = choose_manual_option("Is there a hazard in a common area?", ["Yes", "No"])
+    if shared is None:
+        return None
+    analysis = {
+        "fault_category": category,
+        "summary": summary,
+        "risk_indicators": selected_risks,
+        "common_area_hazard": shared == "Yes",
+        "is_unclear": False,
+    }
+    show_message(json.dumps(analysis, indent=2))
+    if choose_manual_option("Confirm your review:", ["Approve complaint"]) is None:
+        return None
+    return analysis
