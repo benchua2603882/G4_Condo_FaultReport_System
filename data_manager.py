@@ -4,7 +4,8 @@ import os
 from tempfile import NamedTemporaryFile
 from pathlib import Path
 
-REPORTS_FILE = Path(__file__).resolve().parent / "reports.json"
+# Docker supplies its mounted storage path; native runs keep the project default.
+REPORTS_FILE = Path(os.getenv("REPORTS_FILE", Path(__file__).resolve().parent / "reports.json"))
 COMPLAINT_STATUSES = ("Contractor contacted", "Pending Action", "Resolved")
 
 def is_accepted_report(report):

@@ -1,0 +1,10 @@
+# Only application source, tests and dependency definitions enter the build.
+*
+!Dockerfile
+!requirements.txt
+!main.py
+!io_manager.py
+!ai_manager.py
+!logic_manager.py
+!data_manager.py
+!test_*.py
