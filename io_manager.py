@@ -268,23 +268,6 @@ def choose_complaint_status():
             return statuses[choice]
         show_message("Invalid input. Enter 1, 2, 3, or 4.")
 
-def choose_complaint_status():
-    """Return the chosen status string, or None for Go back to the main menu.
-
-    Prompt with the three supported statuses and repeat invalid choices.
-    """
-
-    statuses = {"1": "Contractor contacted", "2": "Pending Action", "3": "Resolved"}
-    while True:
-        show_message("\n1. Contractor contacted\n2. Pending Action\n3. Resolved\n4. Go back")
-        choice = input("Choose a status: ").strip()
-        if choice == "4":
-            return None
-        if choice in statuses:
-            return statuses[choice]
-        show_message("Invalid input. Enter 1, 2, 3, or 4.")
-
-        
 def collect_report_edits(report):
     """Return an edited copy on Save, or None on Go back without saving.
     Allow name, phone, description, and image edits using existing validators.
