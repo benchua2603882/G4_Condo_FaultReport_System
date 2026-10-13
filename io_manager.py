@@ -3,6 +3,7 @@ from pathlib import Path
 import json
 from getpass import getpass
 from copy import deepcopy
+from textwrap import wrap
 
 def show_menu(role="resident"):
     """Return a menu choice allowed for the current role.
@@ -181,10 +182,10 @@ def collect_complaint(complaint_id):
     return [complaint_id, name, phone_number, description, image_path, date_time]
 
 def show_reports(reports):
-    """Display the supplied list of saved reports with numbered entries.
+    """Display each saved complaint in a bordered Field / Value table.
 
-    Format each report as indented JSON. Show an empty-list message when
-    there are no reports. Returns None and does not change the records.
+    Wrap long values without shortening them and include all processing
+    details. Show a message for an empty list. Do not change saved records.
     """
 
     if not reports:
@@ -194,7 +195,39 @@ def show_reports(reports):
     show_message("\n--- Saved Reports ---")
     for number, report in enumerate(reports, start=1):
         show_message(f"\nReport {number}:")
-        show_message(json.dumps(report, indent=2, ensure_ascii=False))
+        # Keep the original complaint fields first, followed by its results.
+        labels = ["Complaint ID", "Name", "Phone number", "Description", "Image path", "Submitted at"]
+        rows = list(zip(labels, report[:6]))
+        if len(report) > 6 and isinstance(report[6], dict):
+            for key, value in report[6].items():
+                rows.append((key.replace("_", " ").capitalize(), value))
+
+        field_width = max([len("Field")] + [len(label) for label, value in rows])
+        value_width = 52
+        border = "+-" + "-" * field_width + "-+-" + "-" * value_width + "-+"
+        show_message(border)
+        show_message(f"| {'Field':<{field_width}} | {'Value':<{value_width}} |")
+        show_message(border)
+
+        for label, value in rows:
+            # Convert lists and flags into readable text without editing them.
+            if isinstance(value, bool):
+                text = "Yes" if value else "No"
+            elif isinstance(value, list):
+                text = ", ".join(str(item) for item in value) or "None"
+            elif value is None:
+                text = "N/A"
+            else:
+                text = str(value)
+
+            # Keep existing line breaks, including those in emergency alerts.
+            lines = []
+            for paragraph in text.splitlines() or [""]:
+                lines.extend(wrap(paragraph, width=value_width) or [""])
+            for index, line in enumerate(lines):
+                field = label if index == 0 else ""
+                show_message(f"| {field:<{field_width}} | {line:<{value_width}} |")
+        show_message(border)
 
 def show_welcome():
     """Ask whether the user is a resident or admin; return '1', '2', or 'quit'.
