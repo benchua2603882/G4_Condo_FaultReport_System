@@ -39,29 +39,65 @@ def determine_severity(ai_result):
     return severity
 
 
-def determine_priority(ai_result):
-    """Return priority from hazards, severity and whether a common area is affected.
+class EmergencyPriorityRule:
+    """Priority rule that only fires for emergencies."""
 
-    Reported fire is always EMERGENCY, including inside a private apartment.
-    Other scores of at least 8 with a common-area hazard give EMERGENCY.
-    Otherwise, scores of at least 6 give HIGH, at least 3 give MEDIUM,
-    and lower scores give LOW.
-    """
+    def evaluate(self, ai_result):
+        """Return "EMERGENCY" for fire, or severity >= 8 in a common area; else None."""
 
-    severity = ai_result["severity_score"]
-    hazard = ai_result["common_area_hazard"]
+        if "fire" in ai_result.get("risk_indicators", []):
+            return "EMERGENCY"
+        if ai_result["severity_score"] >= 8 and ai_result["common_area_hazard"]:
+            return "EMERGENCY"
+        return None
 
-    if "fire" in ai_result.get("risk_indicators", []) or (severity >= 8 and hazard):
-        return "EMERGENCY"
 
-    elif severity >= 6:
-        return "HIGH"
+class ScorePriorityRule:
+    """Priority rule that maps a severity score to HIGH, MEDIUM or LOW."""
 
-    elif severity >= 3:
-        return "MEDIUM"
+    def __init__(self, high_at=6, medium_at=3):
+        """Store the severity thresholds so they can be changed per rule."""
 
-    else:
+        self.high_at = high_at
+        self.medium_at = medium_at
+
+    def evaluate(self, ai_result):
+        """Return HIGH, MEDIUM or LOW from severity_score."""
+
+        severity = ai_result["severity_score"]
+        if severity >= self.high_at:
+            return "HIGH"
+        if severity >= self.medium_at:
+            return "MEDIUM"
         return "LOW"
+
+
+class LogicManager:
+    """Runs interchangeable priority rules in order; the first answer wins."""
+
+    def __init__(self, priority_rules=None):
+        """Use the given rules, or the default emergency-then-score order."""
+
+        self.priority_rules = priority_rules or [EmergencyPriorityRule(), ScorePriorityRule()]
+
+    def determine_priority(self, ai_result):
+        """Return the first priority a rule gives, or LOW if none does."""
+
+        for rule in self.priority_rules:
+            priority = rule.evaluate(ai_result)
+            if priority is not None:
+                return priority
+        return "LOW"
+
+
+_DEFAULT_MANAGER = LogicManager()
+
+
+def determine_priority(ai_result):
+    """Keep the old function name working by using the default LogicManager."""
+
+    return _DEFAULT_MANAGER.determine_priority(ai_result)
+
 
 def assign_contractor(ai_result):
     """Return the contractor name matching the report's fault_category.
