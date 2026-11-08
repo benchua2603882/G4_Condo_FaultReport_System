@@ -4,6 +4,7 @@ import json
 from getpass import getpass
 from copy import deepcopy
 from textwrap import wrap
+from abc import ABC, abstractmethod
 
 def show_menu(role="resident"):
     """Return a menu choice allowed for the current role.
@@ -409,3 +410,35 @@ def collect_manual_analysis(complaint, categories, risks):
     if choose_manual_option("Confirm your review:", ["Approve complaint"]) is None:
         return None
     return analysis
+
+# --------------------------------------------------------------------------
+# Interface: how the program talks to the outside world
+# --------------------------------------------------------------------------
+class IOChannel(ABC):
+    """Contract for any input/output device (console, GUI, test double)."""
+
+    @abstractmethod
+    def read(self, prompt=""):
+        """Return one line of text typed by the user."""
+
+    @abstractmethod
+    def read_secret(self, prompt=""):
+        """Return text typed by the user without echoing it."""
+
+    @abstractmethod
+    def write(self, message=""):
+        """Show a message to the user."""
+
+
+class ConsoleChannel(IOChannel):
+    """Terminal implementation. Looks up input/print at call time so that
+    unittest.mock.patch("builtins.input") still works."""
+
+    def read(self, prompt=""):
+        return input(prompt)
+
+    def read_secret(self, prompt=""):
+        return getpass(prompt)
+
+    def write(self, message=""):
+        print(message)
