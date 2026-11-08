@@ -442,3 +442,60 @@ class ConsoleChannel(IOChannel):
 
     def write(self, message=""):
         print(message)
+
+# --------------------------------------------------------------------------
+# Abstract validator + concrete validators (inheritance + polymorphism)
+# --------------------------------------------------------------------------
+class InputValidator(ABC):
+    """Base class: turn raw text into clean text, or raise ValueError."""
+
+    def __init__(self, error_message):
+        self._error_message = error_message
+
+    @property
+    def error_message(self):
+        return self._error_message
+
+    def clean(self, raw):
+        """Template method: trim, then let the subclass accept or reject."""
+        value = raw.strip()
+        if not self._is_valid(value):
+            raise ValueError(self._error_message)
+        return self._transform(value)
+
+    @abstractmethod
+    def _is_valid(self, value):
+        """Return True if the trimmed value is acceptable."""
+
+    def _transform(self, value):
+        """Hook: subclasses may change the accepted value. Default keeps it."""
+        return value
+
+
+class NameValidator(InputValidator):
+    def __init__(self):
+        super().__init__("Invalid name. Enter letters and spaces only.")
+
+    def _is_valid(self, value):
+        return value.replace(" ", "").isalpha()
+
+
+class PhoneValidator(InputValidator):
+    def __init__(self):
+        super().__init__(
+            "Invalid phone number. Enter digits only, "
+            "with an optional '+' at the beginning."
+        )
+
+    def _is_valid(self, value):
+        # Remove a leading '+' only for checking; the stored text keeps it.
+        digits = value.removeprefix("+")
+        return digits.isascii() and digits.isdecimal()
+
+
+class RequiredTextValidator(InputValidator):
+    def __init__(self):
+        super().__init__("This field cannot be empty. Please try again.")
+
+    def _is_valid(self, value):
+        return bool(value)
