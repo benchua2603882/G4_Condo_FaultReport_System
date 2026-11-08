@@ -1,89 +1,70 @@
 import json
-import re
 import os
-from tempfile import NamedTemporaryFile
+import re
+from datetime import date
+from activity_history import ActivityHistory
 from pathlib import Path
+from tempfile import NamedTemporaryFile
+from contracts import ReportRepository
+from report_policy import ReportPolicy
+
+DEFAULT_REPORTS_FILE = Path(__file__).resolve().parent / "reports.json"
+COMPLAINT_STATUSES = ("Contractor contacted", "Pending Action", "Resolved")
 
 # Docker supplies its mounted storage path; native runs keep the project default.
 REPORTS_FILE = Path(os.getenv("REPORTS_FILE", Path(__file__).resolve().parent / "reports.json"))
 COMPLAINT_STATUSES = ("Contractor contacted", "Pending Action", "Resolved")
 
-def is_accepted_report(report):
-    """Check that a seven-item report has accepted, clear processing details."""
+class JsonReportRepository(ReportRepository):
+    """Persist the existing list records at this instance's selected JSON path."""
 
-    return (
-        isinstance(report, list)
-        and len(report) == 7
-        and isinstance(report[6], dict)
-        and report[6].get("accepted") is True
-        and report[6].get("is_unclear") is False
-    )
+    def __init__(self, reports_file=DEFAULT_REPORTS_FILE):
+        """Own the record policy and keep storage paths independent per instance."""
+        self._reports_file = Path(reports_file)
+        self._policy = ReportPolicy()
+        # New feature: build history separately, then persist it with the record.
+        self._history = ActivityHistory()
 
-def is_pending_review(report):
-    """Check that a saved complaint is explicitly awaiting manual classification."""
+    @property
+    def reports_file(self):
+        """Expose the configured path without allowing accidental reassignment."""
+        return self._reports_file
 
-    return (
-        isinstance(report, list) and len(report) == 7
-        and isinstance(report[6], dict)
-        and report[6].get("accepted") is False
-        and report[6].get("manual_input_required") is True
-        and report[6].get("status") == "Pending Manual Review"
-    )
+    def find_report_index(self, reports, complaint_id):
+        """Find a report's position in a loaded list, or raise an unknown-ID error."""
 
-def find_report_index(reports, complaint_id):
-    """Find a report's position in a loaded list, or raise an unknown-ID error."""
+        for index, report in enumerate(reports):
+            if isinstance(report, list) and len(report) == 7 and report[0] == complaint_id:
+                return index
+        raise ValueError(f"Complaint ID '{complaint_id}' was not found.")
 
-    for index, report in enumerate(reports):
-        if isinstance(report, list) and len(report) == 7 and report[0] == complaint_id:
-            return index
-    raise ValueError(f"Complaint ID '{complaint_id}' was not found.")
+    def load_reports(self):
+        """Read self._reports_file and return its stored list of complaint records.
 
-def load_reports():
-    """Read REPORTS_FILE and return complaint list.
+        Take no arguments and return an empty list if the file does not exist.
+        Raise an error for unreadable files, invalid JSON, or a non-list result
+        so the caller can report the problem without overwriting existing data.
+        """
 
-    Take no arguments and return an empty list if the file does not exist.
-    Raise an error for unreadable files, invalid JSON, or a non-list result
-    so the caller can report the problem without overwriting existing data.
-    """
+        try:
+            with self._reports_file.open(encoding="utf-8-sig") as file:
+                reports = json.load(file)
+        except FileNotFoundError:
+            return []
 
-    try:
-        with REPORTS_FILE.open(encoding="utf-8-sig") as file:
-            reports = json.load(file)
-    except FileNotFoundError:
-        return []
+        if not isinstance(reports, list):
+            raise ValueError("The reports JSON file must contain a list of reports.")
 
-    if not isinstance(reports, list):
-        raise ValueError("The reports JSON file must contain a list of reports.")
+        # Older accepted reports have no status yet; display them as pending.
+        for report in reports:
+            if isinstance(report, list) and len(report) == 7 and isinstance(report[6], dict):
+                if report[6].get("accepted") is True:
+                    report[6].setdefault("status", "Pending Action")
+        return reports
 
-    # Older accepted reports have no status yet; display them as pending.
-    for report in reports:
-        if isinstance(report, list) and len(report) == 7 and isinstance(report[6], dict):
-            if report[6].get("accepted") is True:
-                report[6].setdefault("status", "Pending Action")
-    return reports
 
-def get_next_complaint_id():
-    """Return the next complaint_001-style ID based on saved reports.
-
-    Start at 001 for an empty or missing file. Use the highest saved numeric
-    ID or the record count (for older HDB IDs), whichever is larger, plus one.
-    Reading the file each time preserves numbering across application restarts.
-    No number is reserved until a report is successfully saved. File errors
-    are passed to the caller rather than resetting the sequence.
-    """
-
-    reports = load_reports()
-    highest_number = len(reports)
-    for report in reports:
-        if isinstance(report, list) and report and isinstance(report[0], str):
-            match = re.fullmatch(r"complaint_([0-9]+)", report[0])
-            if match:
-                highest_number = max(highest_number, int(match.group(1)))
-
-    return f"complaint_{highest_number + 1:03d}"
-
-def save_report(complaint):
-    """Save an accepted or explicitly pending-manual-review seven-item complaint.
+    def save_report(complaint):
+         """Save an accepted or explicitly pending-manual-review seven-item complaint.
 
     Unclear/rejected AI results are excluded unless awaiting manual review.
     Reject an invalid record or duplicate ID. Load existing reports, append
