@@ -1,10 +1,11 @@
 """Tests for the OOP IOManager. Run with: python test_io_manager.py"""
-
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
 from io_manager import (
-    ConsoleChannel, IOChannel,
-    NameValidator, PhoneValidator, RequiredTextValidator,
+    ConsoleChannel, IOChannel, ImagePathCollector, NameValidator,
+    PhoneValidator, RequiredTextValidator, ValidatedPrompter,
 )
 
 def check(label, actual, expected):
@@ -43,7 +44,53 @@ def test_validators_polymorphism():
         except ValueError as error:
             check(f"{name} rejects bad input", str(error), validator.error_message)
 
+class FakeChannel(IOChannel):
+    """Plays back scripted answers and records everything shown to the user."""
+
+    def __init__(self, answers=()):
+        self._answers = list(answers)
+        self.output = []
+
+    def read(self, prompt=""):
+        self.output.append(prompt)
+        return self._answers.pop(0)
+
+    def read_secret(self, prompt=""):
+        self.output.append(prompt)
+        return self._answers.pop(0)
+
+    def write(self, message=""):
+        self.output.append(str(message))
+
+
+def test_prompter_retries():
+    channel = FakeChannel([" ", "Resident123", "  Test Resident  "])
+    prompter = ValidatedPrompter(channel)
+    check("name retried then trimmed", prompter.ask("Name? ", NameValidator()), "Test Resident")
+    check("two error messages shown",
+          channel.output.count(NameValidator().error_message), 2)
+
+    prompter = ValidatedPrompter(FakeChannel(["", "abc", "++65", "１２３", "  +6500123456  "]))
+    check("phone retried, plus and zeros kept",
+          prompter.ask("Phone? ", PhoneValidator()), "+6500123456")
+
+
+def test_image_path_collector():
+    with TemporaryDirectory() as folder:
+        (Path(folder) / "leak.png").write_bytes(b"x")
+        (Path(folder) / "note.txt").write_text("x")
+
+        answers = ["maybe", "y", "", "missing.png", "note.txt", "leak.png"]
+        collector = ImagePathCollector(FakeChannel(answers), project_folder=Path(folder))
+        expected = str((Path(folder) / "leak.png").resolve())
+        check("retries bad answers and returns absolute path", collector.collect(), expected)
+
+        collector = ImagePathCollector(FakeChannel(["N"]), project_folder=Path(folder))
+        check("N returns no_image", collector.collect(), "no_image")
+
 if __name__ == "__main__":
     test_channel_interface()
     test_validators_polymorphism()
+    test_prompter_retries()
+    test_image_path_collector()
     print("\nAll IOManager tests passed!")

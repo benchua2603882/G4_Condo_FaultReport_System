@@ -499,3 +499,69 @@ class RequiredTextValidator(InputValidator):
 
     def _is_valid(self, value):
         return bool(value)
+
+# --------------------------------------------------------------------------
+# Prompting helpers
+# --------------------------------------------------------------------------
+class ValidatedPrompter:
+    """Asks a question until a validator accepts the answer."""
+
+    def __init__(self, channel):
+        self._channel = channel
+
+    def ask(self, prompt, validator):
+        while True:
+            try:
+                return validator.clean(self._channel.read(prompt))
+            except ValueError as error:
+                self._channel.write(str(error))
+
+    def ask_choice(self, prompt, allowed, error_message, lowercase=False):
+        """Ask until the answer is one of `allowed`; return it."""
+        while True:
+            choice = self._channel.read(prompt).strip()
+            if lowercase:
+                choice = choice.lower()
+            if choice in allowed:
+                return choice
+            self._channel.write(error_message)
+
+
+class ImagePathCollector:
+    """Asks about an optional image and validates the file path."""
+
+    ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
+    NO_IMAGE = "no_image"
+
+    def __init__(self, channel, project_folder=None):
+        self._channel = channel
+        self._project_folder = project_folder or Path(__file__).resolve().parent
+
+    def collect(self):
+        while True:
+            answer = self._channel.read(
+                "Do you have an image to attach? (Y/N): "
+            ).strip().lower()
+            if answer == "n":
+                return self.NO_IMAGE
+            if answer == "y":
+                break
+            self._channel.write("Invalid input. Please enter Y or N.")
+
+        while True:
+            image_path = self._channel.read(
+                "Enter the image path (e.g. test_images/leak.jpg): "
+            ).strip().strip("\"'")
+            if not image_path:
+                self._channel.write("The image path cannot be empty.")
+                continue
+            path = Path(image_path).expanduser()
+            if not path.is_absolute():
+                path = self._project_folder / path
+            if not path.is_file():
+                self._channel.write("File not found. Please check the path.")
+                continue
+            if path.suffix.lower() not in self.ALLOWED_EXTENSIONS:
+                self._channel.write("Please select a JPG, JPEG, PNG, or WEBP image.")
+                continue
+            return str(path.resolve())
