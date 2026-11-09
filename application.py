@@ -83,3 +83,75 @@ class ReportApplication:
         self._io.show_message(processed["alert"])
 
         return complaint
+
+
+    def select_report(self, reports):
+        """Prompt for an existing report ID and load its current saved record.
+
+        Retry IDs missing from the supplied list. Return None on Go back or
+        storage errors. Reload the selected record before editing or deleting it.
+        """
+
+        while True:
+            complaint_id = self._io.collect_report_id()
+            if complaint_id is None:
+                return None
+            try:
+                self._data.find_report_index(reports, complaint_id)
+            except ValueError:
+                self._io.show_message("Complaint ID not found. Please try again.")
+                continue
+            try:
+                return self._data.get_report(complaint_id)
+            except (OSError, ValueError) as error:
+                self._io.show_message(f"Unable to load complaint: {error}")
+                return None
+
+    def view_one_report(self, reports):
+        """Display one report selected by ID; return False if selection is cancelled."""
+
+        report = self.select_report(reports)
+        if report is None:
+            return False
+        self._io.show_reports([report])
+        return True
+
+    def update_report_status(self, reports):
+        """Select a saved complaint by ID and persist the selected status.
+
+        Take the currently loaded report list and retry unknown IDs. Return True
+        after saving, or False for Go back or a storage error.
+        """
+
+        report = self.select_report(reports)
+        if report is None:
+            return False
+        complaint_id = report[0]
+
+        status = self._io.choose_complaint_status()
+        if status is None:
+            return False
+        try:
+            self._data.update_complaint_status(complaint_id, status)
+        except (OSError, ValueError) as error:
+            self._io.show_message(f"Unable to update complaint status: {error}")
+            return False
+        self._io.show_message(f"Complaint {complaint_id} status updated to {status}.")
+        return True
+
+    def remove_report(self, reports):
+        """Delete a selected report only after confirmation; return False on Go back."""
+
+        report = self.select_report(reports)
+        if report is None:
+            return False
+        if not self._io.confirm_report_deletion(report):
+            self._io.show_message("Deletion cancelled.")
+            return True
+        try:
+            self._data.delete_report(report[0])
+        except (OSError, ValueError) as error:
+            self._io.show_message(f"Unable to delete complaint: {error}")
+            return False
+        self._io.show_message(f"Complaint {report[0]} deleted.")
+        return True
