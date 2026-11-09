@@ -63,52 +63,63 @@ class JsonReportRepository(ReportRepository):
         return reports
 
 
-    def save_report(complaint):
-         """Save an accepted or explicitly pending-manual-review seven-item complaint.
+    def save_report(self, complaint, actor="Resident"):
+        """Save an accepted or explicitly pending-manual-review seven-item complaint.
 
-    Unclear/rejected AI results are excluded unless awaiting manual review.
-    Reject an invalid record or duplicate ID. Load existing reports, append
-    the complaint, and write a temporary file before replacing REPORTS_FILE.
-    Return None on success; raise an error if validation or file access fails.
-    """
+        Unclear/rejected AI results are excluded unless awaiting manual review.
+        Reject an invalid record or duplicate ID. Load existing reports, append
+        the complaint, and write a temporary file before replacing self._reports_file.
+        Return the saved copy, including history; raise on validation/file errors.
+        """
 
-    pending = is_pending_review(complaint)
-    if not is_accepted_report(complaint) and not pending:
-        raise ValueError("Only accepted complaints or complaints pending manual review can be saved.")
+        pending = self._policy.is_pending_review(complaint)
+        if not self._policy.is_accepted_report(complaint) and not pending:
+            raise ValueError("Only accepted complaints or complaints pending manual review can be saved.")
 
-    # A corrupt existing file raises an error; never overwrite it with an empty list.
-    reports = load_reports()
-    if any(isinstance(report, list) and report and report[0] == complaint[0] for report in reports):
-        raise ValueError("A report with this complaint ID already exists.")
-    details = dict(complaint[6])
-    details.setdefault("status", "Pending Action")
-    if not pending and details["status"] not in COMPLAINT_STATUSES:
-        raise ValueError("Invalid complaint status.")
-    reports.append(complaint[:6] + [details])
-    write_reports(reports)
-       
-def write_reports(reports):
-    """Write a report list atomically, preserving the old file on failure.
+        # A corrupt existing file raises an error; never overwrite it with an empty list.
+        reports = self.load_reports()
+        if any(isinstance(report, list) and report and report[0] == complaint[0] for report in reports):
+            raise ValueError("A report with this complaint ID already exists.")
+        details = dict(complaint[6])
+        details.setdefault("status", "Pending Action")
+        if not pending and details["status"] not in COMPLAINT_STATUSES:
+            raise ValueError("Invalid complaint status.")
+        saved = self._history.record(
+            complaint[:6] + [details], "Submitted", actor,
+            {"status": {"old": None, "new": details["status"]}},
+        )
+        reports.append(saved)
+        self.write_reports(reports)
+        return saved
+    
+    def write_reports(self, reports):
+        """Write a report list atomically, preserving the old file on failure.
 
-    Used after validation by save_report() and update_complaint_status().
-    Return None on success and pass file errors to the caller.
-    """
+        Used after validation by the save, edit, status, and delete functions.
+        Return None on success and pass file errors to the caller.
+        """
 
-    temporary_path = None
-    try:
-        with NamedTemporaryFile(
-            mode="w", encoding="utf-8", dir=REPORTS_FILE.parent,
-            prefix="reports-", suffix=".tmp", delete=False,
-        ) as file:
-            temporary_path = Path(file.name)
-            json.dump(reports, file, indent=2, ensure_ascii=False)
-            file.write("\n")
-            file.flush()
-            os.fsync(file.fileno())
-        os.replace(temporary_path, REPORTS_FILE)
-    finally:
-         if temporary_path is not None and temporary_path.exists():
-            temporary_path.unlink()
+        temporary_path = None
+        try:
+            with NamedTemporaryFile(
+                mode="w", encoding="utf-8", dir=self._reports_file.parent,
+                prefix="reports-", suffix=".tmp", delete=False,
+            ) as file:
+                temporary_path = Path(file.name)
+                json.dump(reports, file, indent=2, ensure_ascii=False)
+                file.write("\n")
+                file.flush()
+                os.fsync(file.fileno())
+            os.replace(temporary_path, self._reports_file)
+        finally:
+            if temporary_path is not None and temporary_path.exists():
+                temporary_path.unlink()
+                 
+    def get_report(self, complaint_id):
+        """Return a saved seven-item report by ID, or raise ValueError if missing."""
+            
+        reports = self.load_reports()
+        return reports[self.find_report_index(reports, complaint_id)]
 
 def update_complaint_status(complaint_id, status):
     """Update one accepted report by ID and persist its new status.
@@ -142,12 +153,6 @@ def filter_reports(priority):
         and isinstance(report[6], dict)
         and report[6].get("priority") == priority.upper()
     ]
-
-def get_report(complaint_id):
-    """Return a saved seven-item report by ID, or raise ValueError if missing."""
-
-    reports = load_reports()
-    return reports[find_report_index(reports, complaint_id)]
 
 def update_report(complaint):
     """Replace an existing report with an accepted or pending-review record.
