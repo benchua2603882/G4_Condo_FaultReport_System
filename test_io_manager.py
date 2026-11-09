@@ -4,8 +4,9 @@ from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
 from io_manager import (
-    ConsoleChannel, IOChannel, ImagePathCollector, NameValidator,
-    PhoneValidator, RequiredTextValidator, ValidatedPrompter,
+    AdminMenu, ConsoleChannel, IOChannel, ImagePathCollector, MenuRegistry,
+    NameValidator, PhoneValidator, RequiredTextValidator, ResidentMenu,
+    ValidatedPrompter,
 )
 
 def check(label, actual, expected):
@@ -88,9 +89,19 @@ def test_image_path_collector():
         collector = ImagePathCollector(FakeChannel(["N"]), project_folder=Path(folder))
         check("N returns no_image", collector.collect(), "no_image")
 
+def test_menu_classes():
+    registry = MenuRegistry()
+    check("resident menu type", type(registry.for_role("resident")), ResidentMenu)
+    check("admin menu type", type(registry.for_role("admin")), AdminMenu)
+    check("unknown role falls back to resident", type(registry.for_role("guest")), ResidentMenu)
+    check("resident cannot choose 2", "2" in registry.for_role("resident").allowed_choices, False)
+    check("admin can choose 3", "3" in registry.for_role("admin").allowed_choices, True)
+    check("admin keeps resident option", "1. Submit a complaint" in AdminMenu().option_lines, True)
+    
 if __name__ == "__main__":
     test_channel_interface()
     test_validators_polymorphism()
     test_prompter_retries()
     test_image_path_collector()
+    test_menu_classes()
     print("\nAll IOManager tests passed!")

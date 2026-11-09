@@ -565,3 +565,55 @@ class ImagePathCollector:
                 self._channel.write("Please select a JPG, JPEG, PNG, or WEBP image.")
                 continue
             return str(path.resolve())
+
+# --------------------------------------------------------------------------
+# Abstract menu + role-specific menus (polymorphism, no if/else on role)
+# --------------------------------------------------------------------------
+class Menu(ABC):
+    """A role's menu: what it shows and which answers it accepts."""
+
+    @property
+    @abstractmethod
+    def option_lines(self):
+        """Numbered lines shown to the user."""
+
+    @property
+    @abstractmethod
+    def allowed_choices(self):
+        """Answers this role may type."""
+
+
+class ResidentMenu(Menu):
+    @property
+    def option_lines(self):
+        return ["1. Submit a complaint"]
+
+    @property
+    def allowed_choices(self):
+        return ("1", "back", "quit")
+
+
+class AdminMenu(ResidentMenu):
+    """An admin can do everything a resident can, plus two more options."""
+
+    @property
+    def option_lines(self):
+        return super().option_lines + [
+            "2. View reports",
+            "3. Review complaints awaiting approval",
+        ]
+
+    @property
+    def allowed_choices(self):
+        return ("1", "2", "3", "back", "quit")
+
+
+class MenuRegistry:
+    """Finds the right Menu for a role. New role = new entry (open/closed)."""
+
+    def __init__(self):
+        self._menus = {"resident": ResidentMenu(), "admin": AdminMenu()}
+
+    def for_role(self, role):
+        # Unknown roles get the safest (smallest) menu.
+        return self._menus.get(role, self._menus["resident"])
