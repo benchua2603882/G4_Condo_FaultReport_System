@@ -120,24 +120,71 @@ class JsonReportRepository(ReportRepository):
             
         reports = self.load_reports()
         return reports[self.find_report_index(reports, complaint_id)]
+    
+    def update_report(self, complaint):
+        """Replace an existing report with an accepted or pending-review record.
 
-def update_complaint_status(complaint_id, status):
-    """Update one accepted report by ID and persist its new status.
+        Keep its ID and original submission time. Return the saved record, or
+        raise an error without writing for invalid data or an unknown ID.
+        """
 
-    Accept one of COMPLAINT_STATUSES. Return the updated record; raise
-    ValueError for an unknown ID, invalid status, or unaccepted record.
-    File errors propagate without replacing the original data.
-    """
+        if not self._policy.is_pending_review(complaint) and (
+            not self._policy.is_accepted_report(complaint) or complaint[6].get("status") not in COMPLAINT_STATUSES
+        ):
+            raise ValueError("Only accepted or pending-manual-review complaints can be updated.")
+        reports = self.load_reports()
+        index = self.find_report_index(reports, complaint[0])
+        if complaint[5] != reports[index][5]:
+            raise ValueError("The original submission time cannot be changed.")
+        original = reports[index]
+        changes = self._history.changes_between(original, complaint)
+        if not changes:
+            return original
+        # New feature: restore history from disk even when reanalysis replaces details.
+        updated = self._history.record(complaint, "Complaint edited", "Admin", changes, original)
+        reports[index] = updated
+        self.write_reports(reports)
+        return updated
 
-    if status not in COMPLAINT_STATUSES:
-        raise ValueError("Invalid complaint status.")
-    reports = load_reports()
-    report = reports[find_report_index(reports, complaint_id)]
-    if not is_accepted_report(report):
-        raise ValueError("Review and approve this complaint using admin option 3 before changing its status.")
-    report[6]["status"] = status
-    write_reports(reports)
-    return report
+    def delete_report(self, complaint_id):
+        """Remove one report by ID and return it after the file is safely written.
+
+        The caller must obtain user confirmation first. Raise ValueError for an
+        unknown ID and propagate storage errors without replacing existing data.
+        """
+
+        reports = self.load_reports()
+        index = self.find_report_index(reports, complaint_id)
+        deleted = reports.pop(index)
+        self.write_reports(reports)
+        return deleted
+
+    def update_complaint_status(self, complaint_id, status):
+        """Update one accepted report by ID and persist its new status.
+
+        Accept one of COMPLAINT_STATUSES. Return the updated record; raise
+        ValueError for an unknown ID, invalid status, or unaccepted record.
+        File errors propagate without replacing the original data.
+        """
+
+        if status not in COMPLAINT_STATUSES:
+            raise ValueError("Invalid complaint status.")
+        reports = self.load_reports()
+        index = self.find_report_index(reports, complaint_id)
+        report = reports[index]
+        if not self._policy.is_accepted_report(report):
+            raise ValueError("Review and approve this complaint using admin option 3 before changing its status.")
+        previous_status = report[6].get("status")
+        if previous_status == status:
+            return report
+        # Improved feature: the status change and activity entry share one write.
+        updated = self._history.record(report, "Status changed", "Admin", {
+            "status": {"old": previous_status, "new": status},
+        }, previous=report)
+        updated[6]["status"] = status
+        reports[index] = updated
+        self.write_reports(reports)
+        return updated
 
 def filter_reports(priority):
     """Load saved records and return those matching the supplied priority.
@@ -153,38 +200,6 @@ def filter_reports(priority):
         and isinstance(report[6], dict)
         and report[6].get("priority") == priority.upper()
     ]
-
-def update_report(complaint):
-    """Replace an existing report with an accepted or pending-review record.
-
-    Keep its ID and original submission time. Return the saved record, or
-    raise an error without writing for invalid data or an unknown ID.
-    """
-
-    if not is_pending_review(complaint) and (
-        not is_accepted_report(complaint) or complaint[6].get("status") not in COMPLAINT_STATUSES
-    ):
-        raise ValueError("Only accepted or pending-manual-review complaints can be updated.")
-    reports = load_reports()
-    index = find_report_index(reports, complaint[0])
-    if complaint[5] != reports[index][5]:
-        raise ValueError("The original submission time cannot be changed.")
-    reports[index] = complaint
-    write_reports(reports)
-    return complaint
-
-def delete_report(complaint_id):
-    """Remove one report by ID and return it after the file is safely written.
-
-    The caller must obtain user confirmation first. Raise ValueError for an
-    unknown ID and propagate storage errors without replacing existing data.
-    """
-
-    reports = load_reports()
-    index = find_report_index(reports, complaint_id)
-    deleted = reports.pop(index)
-    write_reports(reports)
-    return deleted
 
 def load_pending_reviews():
     """Return complaints in reports.json that still need manual review."""
