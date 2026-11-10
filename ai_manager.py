@@ -1,6 +1,7 @@
 import os
 import json
 import logging
+from copy import deepcopy
 
 
 FAULT_CATEGORIES = ["plumbing", "lift", "electrical", "general maintenance"]
@@ -42,7 +43,13 @@ Do not decide severity scores, priority, acceptance, or contractors.
 
 class AnalysisSchema:
     """Own and validate the structured analysis contract used by AI and review."""
-    
+
+    def __init__(self):
+        """Take independent copies so callers cannot mutate shared schema state."""
+        self._schema = deepcopy(RESPONSE_SCHEMA)
+        self._categories = tuple(FAULT_CATEGORIES)
+        self._risks = tuple(RISK_INDICATORS)
+
 
 def analyze_complaint(complaint):
     """Return validated AI details, or an unavailable marker for admin review.
