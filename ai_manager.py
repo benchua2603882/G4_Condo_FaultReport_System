@@ -55,6 +55,13 @@ class AnalysisSchema:
         """Return the allowed categories as an immutable sequence."""
         return self._categories
 
+    @property
+    def risks(self):
+        """Return the allowed risks as an immutable sequence."""
+        return self._risks
+
+    
+
 
 
 
