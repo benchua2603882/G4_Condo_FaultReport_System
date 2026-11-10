@@ -2,6 +2,7 @@ import os
 import json
 import logging
 from copy import deepcopy
+from contracts import AnalysisProvider
 
 
 FAULT_CATEGORIES = ["plumbing", "lift", "electrical", "general maintenance"]
