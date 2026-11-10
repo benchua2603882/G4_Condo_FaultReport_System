@@ -169,3 +169,9 @@ def request_analysis(complaint):
 
 class GeminiProvider(AnalysisProvider):
     """Implement the external-analysis contract using the existing Gemini call."""
+
+    def __init__(self, schema: AnalysisSchema):
+        """Refer to the schema owned by the AI manager."""
+        self._schema = schema
+
+    
