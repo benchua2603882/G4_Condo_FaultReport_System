@@ -108,65 +108,6 @@ def analyze_complaint(complaint):
             "error_type": type(error).__name__,
         }
 
-def request_analysis(complaint):
-    """Build a Gemini request from the complaint and validate its JSON response.
-
-    Expected list: [complaint_id, name, phone_number, description,
-    image_path, date_time]. Send only the description and optional image.
-    Return a validated report dictionary and close the client/image resources.
-    Invalid input, API failures, or invalid responses raise an error.
-    """
-
-    from google import genai
-    from google.genai import types
-    from PIL import Image
-
-
-    if not isinstance(complaint, list) or len(complaint) != 6:   
-        raise ValueError("A complaint must contain exactly six fields.")
-
-    if not os.getenv("GEMINI_API_KEY") and not os.getenv("GOOGLE_API_KEY"):
-        raise RuntimeError("Gemini credentials not configured.")
-
-    
-    description = complaint[3]
-    image_path = complaint[4]
-    # Contact details stay in the local complaint list. AI needs the fault details.
-    contents = [f"Resident description: {description}"]
-
-
-    # Keep the optional image open during analysis and always close it afterward.
-    image = None
-    try:
-        if image_path != "no_image":
-            image = Image.open(image_path)
-            contents.append(image)
-
-
-        # Initialize only when submitting, using GEMINI_API_KEY or GOOGLE_API_KEY.
-        with genai.Client() as client:
-            response = client.models.generate_content(
-                model=os.getenv("GEMINI_MODEL", "gemini-3.5-flash-lite"),
-                contents=contents,
-                config=types.GenerateContentConfig(
-                    system_instruction=system_instruction,
-                    response_mime_type="application/json",
-                    response_json_schema=RESPONSE_SCHEMA,
-                    temperature=0.1,
-                ),
-            )
-
-
-    finally:
-        if image is not None:
-            image.close()
-
-
-    if not response.text:
-        raise ValueError("Gemini did not return a fault report.")
-
-    return validate_response(json.loads(response.text))
-
 class GeminiProvider(AnalysisProvider):
     """Implement the external-analysis contract using the existing Gemini call."""
 
