@@ -1,18 +1,3 @@
-# Provisional project rules: adjust these values when the team agrees its policy.
-ADMIN_USERNAME = "admin123"
-ADMIN_PASSWORD = "password123"
-
-
-def authenticate_admin(username, password):
-    """Return True only when both values match the hardcoded demo account.
-
-    Accept username and password strings. This simple local-project login
-    does not create accounts or store session data on disk.
-    """
-
-    return username == ADMIN_USERNAME and password == ADMIN_PASSWORD
-
-
 RISK_SCORES = {
     "fire": 9,
     "smoke": 8,
