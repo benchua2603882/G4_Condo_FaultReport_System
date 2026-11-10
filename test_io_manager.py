@@ -6,7 +6,7 @@ from unittest.mock import patch
 from io_manager import (
     AdminMenu, ConsoleChannel, IOChannel, ImagePathCollector, MenuRegistry,
     NameValidator, PhoneValidator, RequiredTextValidator, ResidentMenu,
-    ValidatedPrompter, ReportFormatter
+    ValidatedPrompter, ReportFormatter, IOManager
 )
 
 def check(label, actual, expected):
@@ -112,7 +112,40 @@ def test_report_formatter():
     long_report = report[:3] + ["word " * 40] + report[4:]
     check("long text is wrapped, not cut",
           sum("word" in l for l in ReportFormatter().format(long_report)) > 1, True)
-    
+
+def test_collect_name_and_phone():
+    io = IOManager(FakeChannel([" ", "Resident123", "  Test Resident  "]))
+    check("name retried then trimmed", io.collect_name(), "Test Resident")
+
+
+def test_collect_complaint():
+    io = IOManager(FakeChannel(["Test Resident", "91234567", "Pipe leaking", "n"]))
+    complaint = io.collect_complaint("complaint_001")
+    check("complaint has six fields", len(complaint), 6)
+    check("complaint id kept", complaint[0], "complaint_001")
+    check("description stored", complaint[3], "Pipe leaking")
+    check("no image marker", complaint[4], "no_image")
+
+
+def test_show_menu_by_role():
+    io = IOManager(FakeChannel(["2", "3", "1"]))
+    check("resident cannot pick admin options", io.show_menu("resident"), "1")
+    io = IOManager(FakeChannel(["9", "", "  BACK  "]))
+    check("admin menu retries then accepts back", io.show_menu("admin"), "back")
+
+
+def test_admin_credentials():
+    io = IOManager(FakeChannel(["admin123", "password123"]))
+    check("credentials returned", io.collect_admin_credentials(), ("admin123", "password123"))
+    io = IOManager(FakeChannel(["BACK"]))
+    check("back cancels login", io.collect_admin_credentials(), None)
+
+
+def test_show_reports_empty():
+    channel = FakeChannel()
+    IOManager(channel).show_reports([])
+    check("empty list message", channel.output, ["\nNo saved reports found."])
+
 if __name__ == "__main__":
     test_channel_interface()
     test_validators_polymorphism()
@@ -120,4 +153,9 @@ if __name__ == "__main__":
     test_image_path_collector()
     test_menu_classes()
     test_report_formatter()
+    test_collect_name_and_phone()
+    test_collect_complaint()
+    test_show_menu_by_role()
+    test_admin_credentials()
+    test_show_reports_empty()
     print("\nAll IOManager tests passed!")
