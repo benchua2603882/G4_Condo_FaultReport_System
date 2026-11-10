@@ -50,6 +50,13 @@ class AnalysisSchema:
         self._categories = tuple(FAULT_CATEGORIES)
         self._risks = tuple(RISK_INDICATORS)
 
+    @property
+    def categories(self):
+        """Return the allowed categories as an immutable sequence."""
+        return self._categories
+
+
+
 
 def analyze_complaint(complaint):
     """Return validated AI details, or an unavailable marker for admin review.
