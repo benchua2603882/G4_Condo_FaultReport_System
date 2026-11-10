@@ -159,9 +159,9 @@ class LogicManager:
     def process_fault(self, ai_result):
         """Apply the business rules to a validated AI report dictionary.
 
-        Return a manual-review marker when AI is unavailable, or accepted=False
+        Return a manual-review marker when AI is unavailable
         and a clarification reason for unclear reports.
-        Otherwise, return accepted=True with the summary, hazards, severity,
+        Otherwise, return with the summary, hazards, severity,
         priority, contractor, response SLA, and alert for the complaint record.
         """
 
