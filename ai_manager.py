@@ -163,3 +163,6 @@ class GeminiProvider(AnalysisProvider):
             raise ValueError("Gemini did not return a fault report.")
 
         return json.loads(response.text)
+
+class AIManager:
+    """Validate provider responses and convert failures into review markers."""
