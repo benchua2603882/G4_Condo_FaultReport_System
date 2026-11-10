@@ -166,3 +166,8 @@ class GeminiProvider(AnalysisProvider):
 
 class AIManager:
     """Validate provider responses and convert failures into review markers."""
+
+    def __init__(self, provider: AnalysisProvider | None = None):
+        """Own a schema and accept a replaceable external-analysis provider."""
+        self._schema = AnalysisSchema()
+        self._provider = provider if provider is not None else GeminiProvider(self._schema)
