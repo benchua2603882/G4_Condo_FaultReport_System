@@ -176,3 +176,8 @@ class AIManager:
     def categories(self):
         """Expose the manual-review choices without exposing schema internals."""
         return self._schema.categories
+
+    @property
+    def risks(self):
+        """Expose the manual-review hazards as an immutable sequence."""
+        return self._schema.risks
