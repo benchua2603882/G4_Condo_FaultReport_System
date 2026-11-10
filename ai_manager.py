@@ -189,3 +189,17 @@ class AIManager:
     def request_analysis(self, complaint):
         """Call the provider and validate its parsed response before using it."""
         return self.validate_response(self._provider.request_analysis(complaint))
+
+    def analyze_complaint(self, complaint):
+        """Return validated AI details, or an unavailable marker for admin review.
+
+        Delegate the API work to request_analysis(). If it fails, log the error
+        type without private API details and let the app queue manual review.
+        """
+
+        try:
+            return self.request_analysis(complaint)
+        except Exception as error:
+            # Avoid logging residents' text or API error bodies containing credentials.
+            logging.getLogger(__name__).error("Complaint analysis failed (%s)", type(error).__name__)
+            return {"ai_available": False, "error_type": type(error).__name__}
