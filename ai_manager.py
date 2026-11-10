@@ -166,3 +166,6 @@ def request_analysis(complaint):
         raise ValueError("Gemini did not return a fault report.")
 
     return validate_response(json.loads(response.text))
+
+class GeminiProvider(AnalysisProvider):
+    """Implement the external-analysis contract using the existing Gemini call."""
