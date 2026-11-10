@@ -85,29 +85,8 @@ class AnalysisSchema:
         if any(type(report[field]) is not bool for field in ("common_area_hazard", "is_unclear")):
             raise ValueError("Gemini returned invalid boolean fields.")
         return report
+
     
-
-
-def analyze_complaint(complaint):
-    """Return validated AI details, or an unavailable marker for admin review.
-
-    Delegate the API work to request_analysis(). If it fails, log the error
-    type without private API details and let the app queue manual review.
-    """
-
-    try:
-        result = request_analysis(complaint)
-        result["ai_available"] = True
-        return result
-        
-    except Exception as error:
-        # Avoid logging residents' text or API error bodies containing credentials.
-        logging.getLogger(__name__).error("Complaint analysis failed (%s)", type(error).__name__)
-        return {
-            "ai_available": False,
-            "error_type": type(error).__name__,
-        }
-
 class GeminiProvider(AnalysisProvider):
     """Implement the external-analysis contract using the existing Gemini call."""
 
@@ -163,6 +142,7 @@ class GeminiProvider(AnalysisProvider):
             raise ValueError("Gemini did not return a fault report.")
 
         return json.loads(response.text)
+
 
 class AIManager:
     """Validate provider responses and convert failures into review markers."""
