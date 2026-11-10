@@ -174,4 +174,51 @@ class GeminiProvider(AnalysisProvider):
         """Refer to the schema owned by the AI manager."""
         self._schema = schema
 
-    
+    def request_analysis(self, complaint):
+        """Build a Gemini request and parse its JSON response.
+
+        Expected list: [complaint_id, name, phone_number, description,
+        image_path, date_time]. Send only the description and optional image.
+        Return parsed data for AIManager to validate; close client/image resources.
+        Invalid input, API failures, or invalid responses raise an error.
+        """
+
+        from google import genai
+        from google.genai import types
+        from PIL import Image
+
+        if not isinstance(complaint, list) or len(complaint) != 6:
+            raise ValueError("A complaint must contain exactly six fields.")
+
+        description = complaint[3]
+        image_path = complaint[4]
+        # Contact details stay in the local complaint list; AI needs the fault details.
+        contents = [f"Resident description: {description}"]
+
+        # Keep the optional image open during analysis and always close it afterward.
+        image = None
+        try:
+            if image_path != "no_image":
+                image = Image.open(image_path)
+                contents.append(image)
+
+            # Initialize only when submitting, using GEMINI_API_KEY or GOOGLE_API_KEY.
+            with genai.Client() as client:
+                response = client.models.generate_content(
+                    model=os.getenv("GEMINI_MODEL", "gemini-3.5-flash-lite"),
+                    contents=contents,
+                    config=types.GenerateContentConfig(
+                        system_instruction=system_instruction,
+                        response_mime_type="application/json",
+                        response_json_schema=self._schema.response_schema,
+                        temperature=0.1,
+                    ),
+                )
+        finally:
+            if image is not None:
+                image.close()
+
+        if not response.text:
+            raise ValueError("Gemini did not return a fault report.")
+
+        return json.loads(response.text)
