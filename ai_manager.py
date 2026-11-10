@@ -59,7 +59,11 @@ class AnalysisSchema:
     def risks(self):
         """Return the allowed risks as an immutable sequence."""
         return self._risks
-
+    
+    @property
+    def response_schema(self):
+        """Return a copy for the SDK, keeping the owned schema encapsulated."""
+        return deepcopy(self._schema)
     
 
 
