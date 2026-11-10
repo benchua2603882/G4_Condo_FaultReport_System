@@ -6,7 +6,7 @@ from unittest.mock import patch
 from io_manager import (
     AdminMenu, ConsoleChannel, IOChannel, ImagePathCollector, MenuRegistry,
     NameValidator, PhoneValidator, RequiredTextValidator, ResidentMenu,
-    ValidatedPrompter,
+    ValidatedPrompter, ReportFormatter
 )
 
 def check(label, actual, expected):
@@ -97,6 +97,21 @@ def test_menu_classes():
     check("resident cannot choose 2", "2" in registry.for_role("resident").allowed_choices, False)
     check("admin can choose 3", "3" in registry.for_role("admin").allowed_choices, True)
     check("admin keeps resident option", "1. Submit a complaint" in AdminMenu().option_lines, True)
+
+def test_report_formatter():
+    report = ["complaint_001", "Test Resident", "91234567", "Leaking pipe",
+              "no_image", "2026-10-13T10:00:00+08:00",
+              {"accepted": True, "risk_indicators": ["active_leak"], "extra": None}]
+    lines = ReportFormatter().format(report)
+    check("table starts with a border", lines[0].startswith("+-"), True)
+    check("bool shown as Yes", any("Accepted" in l and "Yes" in l for l in lines), True)
+    check("list shown as text", any("active_leak" in l for l in lines), True)
+    check("None shown as N/A", any("N/A" in l for l in lines), True)
+    check("formatter does not change the report", report[6]["accepted"], True)
+
+    long_report = report[:3] + ["word " * 40] + report[4:]
+    check("long text is wrapped, not cut",
+          sum("word" in l for l in ReportFormatter().format(long_report)) > 1, True)
     
 if __name__ == "__main__":
     test_channel_interface()
@@ -104,4 +119,5 @@ if __name__ == "__main__":
     test_prompter_retries()
     test_image_path_collector()
     test_menu_classes()
+    test_report_formatter()
     print("\nAll IOManager tests passed!")

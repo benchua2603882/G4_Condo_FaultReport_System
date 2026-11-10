@@ -617,3 +617,51 @@ class MenuRegistry:
     def for_role(self, role):
         # Unknown roles get the safest (smallest) menu.
         return self._menus.get(role, self._menus["resident"])
+
+# --------------------------------------------------------------------------
+# Report display
+# --------------------------------------------------------------------------
+class ReportFormatter:
+    """Turns saved report lists into bordered Field / Value table lines.
+    It only builds text; it never prints and never changes a report."""
+
+    LABELS = ["Complaint ID", "Name", "Phone number",
+              "Description", "Image path", "Submitted at"]
+    VALUE_WIDTH = 52
+
+    def format(self, report):
+        rows = list(zip(self.LABELS, report[:6]))
+        if len(report) > 6 and isinstance(report[6], dict):
+            for key, value in report[6].items():
+                rows.append((key.replace("_", " ").capitalize(), value))
+
+        field_width = max([len("Field")] + [len(label) for label, _ in rows])
+        border = ("+-" + "-" * field_width + "-+-"
+                  + "-" * self.VALUE_WIDTH + "-+")
+        lines = [border,
+                 f"| {'Field':<{field_width}} | {'Value':<{self.VALUE_WIDTH}} |",
+                 border]
+        for label, value in rows:
+            for index, line in enumerate(self._wrap(self._to_text(value))):
+                field = label if index == 0 else ""
+                lines.append(
+                    f"| {field:<{field_width}} | {line:<{self.VALUE_WIDTH}} |"
+                )
+        lines.append(border)
+        return lines
+
+    @staticmethod
+    def _to_text(value):
+        if isinstance(value, bool):
+            return "Yes" if value else "No"
+        if isinstance(value, list):
+            return ", ".join(str(item) for item in value) or "None"
+        if value is None:
+            return "N/A"
+        return str(value)
+
+    def _wrap(self, text):
+        lines = []
+        for paragraph in text.splitlines() or [""]:
+            lines.extend(wrap(paragraph, width=self.VALUE_WIDTH) or [""])
+        return lines
