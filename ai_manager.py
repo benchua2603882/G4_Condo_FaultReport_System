@@ -171,3 +171,8 @@ class AIManager:
         """Own a schema and accept a replaceable external-analysis provider."""
         self._schema = AnalysisSchema()
         self._provider = provider if provider is not None else GeminiProvider(self._schema)
+
+    @property
+    def categories(self):
+        """Expose the manual-review choices without exposing schema internals."""
+        return self._schema.categories
