@@ -181,3 +181,9 @@ class AIManager:
     def risks(self):
         """Expose the manual-review hazards as an immutable sequence."""
         return self._schema.risks
+
+    def validate_response(self, report):
+        """Apply the same schema to AI and manual classifications."""
+        return self._schema.validate_response(report)
+
+    
