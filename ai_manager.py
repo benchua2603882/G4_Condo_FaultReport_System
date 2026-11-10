@@ -186,4 +186,6 @@ class AIManager:
         """Apply the same schema to AI and manual classifications."""
         return self._schema.validate_response(report)
 
-    
+    def request_analysis(self, complaint):
+        """Call the provider and validate its parsed response before using it."""
+        return self.validate_response(self._provider.request_analysis(complaint))
