@@ -146,6 +146,53 @@ def test_show_reports_empty():
     IOManager(channel).show_reports([])
     check("empty list message", channel.output, ["\nNo saved reports found."])
 
+def test_report_actions():
+    report = ["complaint_001", "Test Resident", "91234567", "Leaking pipe",
+              "no_image", "2026-10-13T10:00:00+08:00", {"accepted": True}]
+
+    io = IOManager(FakeChannel(["maybe", "Y"]))
+    check("deletion confirmed with Y", io.confirm_report_deletion(report), True)
+
+    io = IOManager(FakeChannel(["n"]))
+    check("deletion cancelled with N", io.confirm_report_deletion(report), False)
+
+    io = IOManager(FakeChannel(["7", "2"]))
+    check("status picked after retry", io.choose_complaint_status(), "Pending Action")
+
+    io = IOManager(FakeChannel(["3", "Dripping tap in corridor", "5"]))
+    edited = io.collect_report_edits(report)
+    check("edit changes the copy", edited[3], "Dripping tap in corridor")
+    check("original report untouched", report[3], "Leaking pipe")
+
+    io = IOManager(FakeChannel(["6"]))
+    check("go back returns None", io.collect_report_edits(report), None)
+
+
+def test_manual_analysis():
+    complaint = ["complaint_002", "Test Resident", "91234567", "Pipe leaking",
+                 "no_image", "2026-10-13T10:00:00+08:00",
+                 {"accepted": False, "manual_input_required": True}]
+    categories = ["plumbing", "lift"]
+    risks = ["fire", "active_leak"]
+
+    # summary, category 1, hazards "2", common area 1 (Yes), confirm 1
+    io = IOManager(FakeChannel(["Pipe is leaking", "1", "2", "1", "1"]))
+    result = io.collect_manual_analysis(complaint, categories, risks)
+    check("manual analysis dict", result, {
+        "fault_category": "plumbing",
+        "summary": "Pipe is leaking",
+        "risk_indicators": ["active_leak"],
+        "common_area_hazard": True,
+        "is_unclear": False,
+    })
+
+    io = IOManager(FakeChannel(["back"]))
+    check("back at summary cancels", io.collect_manual_analysis(complaint, categories, risks), None)
+
+    io = IOManager(FakeChannel(["Pipe is leaking", "1", "9", "back"]))
+    check("invalid hazard then back cancels",
+          io.collect_manual_analysis(complaint, categories, risks), None)
+    
 if __name__ == "__main__":
     test_channel_interface()
     test_validators_polymorphism()
@@ -158,4 +205,6 @@ if __name__ == "__main__":
     test_show_menu_by_role()
     test_admin_credentials()
     test_show_reports_empty()
+    test_report_actions()
+    test_manual_analysis()
     print("\nAll IOManager tests passed!")
