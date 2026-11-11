@@ -1,14 +1,24 @@
-"""The existing demonstration account, separated from fault scoring."""
+# Provisional demo account: replace with real credential handling later.
+DEMO_ADMIN_USERNAME = "admin123"
+DEMO_ADMIN_PASSWORD = "password123"
 
 
 class DemoAuthenticator:
-    """Encapsulate the demo credentials and compare both supplied values."""
+    """Checks admin logins against a demo account."""
 
-    def __init__(self, username="admin123", password="password123"):
-        """Retain the Part 1 demo login; this is not production authentication."""
-        self._username = username
-        self._password = password
+    def __init__(self, username=DEMO_ADMIN_USERNAME, password=DEMO_ADMIN_PASSWORD):
+        """Store the one accepted username and password.
+
+        Defaults to the demo account. Pass other values to use a different one.
+        """
+
+        self.username = username
+        self.password = password
 
     def authenticate_admin(self, username, password):
-        """Return True only when both credentials match this account."""
-        return username == self._username and password == self._password
+        """Return True when both values match the stored demo account.
+
+        Accept username and password strings.
+        """
+
+        return username == self.username and password == self.password
