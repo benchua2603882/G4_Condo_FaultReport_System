@@ -7,3 +7,7 @@ from unittest.mock import patch
 
 from ai_manager import AIManager
 
+class AIManagerTests(unittest.TestCase):
+    """Check AI response handling without calling Gemini."""
+
+    
