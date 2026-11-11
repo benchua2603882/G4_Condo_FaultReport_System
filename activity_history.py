@@ -17,4 +17,18 @@ class ActivityHistory:
                 changes[field] = {"old": original[6].get(field), "new": updated[6].get(field)}
         return deepcopy(changes)
 
+    def record(self, report, action, actor, changes, previous=None):
+            """Return a copy with one timestamped event, preserve saved history."""
+            history = previous[6].get("history", []) if previous is not None else []
+            if not isinstance(history, list) or any(not isinstance(entry, dict) for entry in history):
+                raise ValueError("The stored complaint history is invalid.")
+            result = deepcopy(report)
+            result[6]["history"] = deepcopy(history) + [{
+                "timestamp": datetime.now().astimezone().isoformat(timespec="seconds"),
+                "action": action,
+                "actor": actor,
+                "changes": deepcopy(changes),
+            }]
+            return result
+
 print("hello")
