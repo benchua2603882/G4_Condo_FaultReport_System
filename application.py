@@ -28,7 +28,7 @@ class ReportApplication:
             self._io.show_message(processed["emergency_action"])
         return processed
 
-    def process_new_report(self):
+    def process_new_report(self, role="resident"):
         """Run one complaint through the I/O, AI, logic, and data managers.
 
         Collect input and return the saved seven-item record. AI failures go to
@@ -59,7 +59,7 @@ class ReportApplication:
         if processed.get("manual_input_required"):
             report = complaint + [processed]
             try:
-                self._data.save_report(report)
+                report = self._data.save_report(report, actor=role.title())
             except (OSError, ValueError) as error:
                 self._io.show_message(f"Unable to save complaint for review: {error}")
                 return None
@@ -76,7 +76,7 @@ class ReportApplication:
         # Preserve the original six fields and append the AI/logic results.
         complaint.append(processed)
         try:
-            self._data.save_report(complaint)
+            complaint = self._data.save_report(complaint, actor=role.title())
         except (OSError, ValueError) as error:
             self._io.show_message(f"Unable to save complaint: {error}")
             return None
@@ -86,6 +86,14 @@ class ReportApplication:
 
         return complaint
 
+
+    def pending_review_count(self):
+        """New feature: reload the admin notification count; None means unavailable."""
+        try:
+            return len(self._data.load_pending_reviews())
+        except (OSError, ValueError) as error:
+            self._io.show_message(f"Unable to check pending reviews: {error}")
+            return None
 
     def select_report(self, reports):
         """Prompt for an existing report ID and load its current saved record.
