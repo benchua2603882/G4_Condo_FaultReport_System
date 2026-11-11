@@ -42,5 +42,16 @@ class AIManagerTests(unittest.TestCase):
     
             self.manager = AIManager()
 
-            
+    def test_valid_response(self):
+            """Accept a complete response and send only fault details."""
+            self.generate.return_value.text = json.dumps(self.valid)
+    
+            result = self.manager.analyze_complaint(self.complaint)
+    
+            self.assertEqual(result, self.valid)
+            self.generate.assert_called_once()
+            self.assertEqual(
+                self.generate.call_args.kwargs["contents"],
+                ["Resident description: pipe leak at corridor"]
+            )
 
