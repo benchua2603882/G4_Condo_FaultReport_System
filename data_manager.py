@@ -186,37 +186,63 @@ class JsonReportRepository(ReportRepository):
         self.write_reports(reports)
         return updated
 
-def filter_reports(priority):
-    """Load saved records and return those matching the supplied priority.
+    def filter_reports(self, priority=None, *, query="", status=None, category=None,
+                           date_from=None, date_to=None):
+        """Return case-insensitive matches; all supplied criteria must match.
 
-    Accept a priority string such as 'high' or 'EMERGENCY', ignoring case.
-    Return a list of matching seven-item records, or [] if none match.
-    File-loading errors are passed to the caller.
-    """
+        Search current ID/contact/description/summary fields, not old history.
+        Dates are inclusive submission dates (YYYY-MM-DD as recorded locally).
+        Missing or invalid legacy dates are excluded only when dates are filtered.
+        Reading/filtering never writes to the file. Invalid criteria raise ValueError.
+        """
+        start = self._parse_filter_date(date_from)
+        end = self._parse_filter_date(date_to)
+        if start and end and start > end:
+            raise ValueError("Start date must not be after end date.")
+        query = query.strip().casefold()
+        matches = []
+        for report in self.load_reports():
+            if not isinstance(report, list) or len(report) != 7 or not isinstance(report[6], dict):
+                continue
+            details = report[6]
+            if any(value and str(details.get(field, "")).casefold() != value.strip().casefold()
+                    for field, value in (("priority", priority), ("status", status), ("fault_category", category))):
+                continue
+            searchable = [*report[:4], details.get("issue_summary", "")]
+            if query and not any(query in str(value).casefold() for value in searchable):
+                continue
+            if start or end:
+                try:
+                    submitted = self._parse_filter_date(str(report[5])[:10])
+                except ValueError:
+                    continue
+                if submitted is None or (start and submitted < start) or (end and submitted > end):
+                    continue
+            matches.append(report)
+        return matches
 
-    return [
-        report for report in load_reports()
-        if isinstance(report, list) and len(report) == 7
-        and isinstance(report[6], dict)
-        and report[6].get("priority") == priority.upper()
-    ]
+    def load_pending_reviews(self):
+        """Return complaints in reports.json that still need manual review."""
+    
+        return [report for report in self.load_reports() if self._policy.is_pending_review(report)]
+    
+    def approve_pending_review(self, report):
+        """Replace one pending record with its approved result in a single atomic write."""
 
-def load_pending_reviews():
-    """Return complaints in reports.json that still need manual review."""
-
-    return [report for report in load_reports() if is_pending_review(report)]
-
-def approve_pending_review(report):
-    """Replace one pending record with its approved result in a single atomic write."""
-
-    if not is_accepted_report(report) or report[6].get("status") != "Pending Action":
-        raise ValueError("Manual approval requires accepted, clear details.")
-    reports = load_reports()
-    index = find_report_index(reports, report[0])
-    if not is_pending_review(reports[index]):
-        raise ValueError("This complaint is no longer pending manual review.")
-    if reports[index][:6] != report[:6]:
-        raise ValueError("The pending complaint changed; reload it before approval.")
-    reports[index] = report
-    write_reports(reports)
-    return report
+        if not self._policy.is_accepted_report(report) or report[6].get("status") != "Pending Action":
+            raise ValueError("Manual approval requires accepted, clear details.")
+        reports = self.load_reports()
+        index = self.find_report_index(reports, report[0])
+        if not self._policy.is_pending_review(reports[index]):
+            raise ValueError("This complaint is no longer pending manual review.")
+        if reports[index][:6] != report[:6]:
+            raise ValueError("The pending complaint changed; reload it before approval.")
+        original = reports[index]
+        approved = self._history.record(
+            report, "Manually approved", "Admin",
+            self._history.changes_between(original, report), original,
+        )
+        reports[index] = approved
+        self.write_reports(reports)
+        return approved
+    
