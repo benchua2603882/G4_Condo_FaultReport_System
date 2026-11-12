@@ -4,408 +4,518 @@ import json
 from getpass import getpass
 from copy import deepcopy
 from textwrap import wrap
+from abc import ABC, abstractmethod
 
-def show_menu(role="resident"):
-    """Return a menu choice allowed for the current role.
+# --------------------------------------------------------------------------
+# Interface: how the program talks to the outside world
+# --------------------------------------------------------------------------
+class IOChannel(ABC):
+    """Contract for any input/output device (console, GUI, test double)."""
 
-    Residents can submit complaints. Admins can also manage reports
-    and review pending complaints. Back signs out; quit exits.
-    Repeat invalid choices.
-    """
+    @abstractmethod
+    def read(self, prompt=""):
+        """Return one line of text typed by the user."""
 
-    while True:
-        print("\n========================================")
-        print(f"Condo Fault Reporting System - {role.title()}")
-        print("========================================")
-        print("1. Submit a complaint")
+    @abstractmethod
+    def read_secret(self, prompt=""):
+        """Return text typed by the user without echoing it."""
 
-        if role == "admin":
-            print("2. View reports")
-            print("3. Review complaints awaiting approval")
+    @abstractmethod
+    def write(self, message=""):
+        """Show a message to the user."""
 
-        print("Type 'back' to return to the welcome screen, or 'quit' to exit.")
 
-        choice = input("Choose an option: ").strip().lower()
+class ConsoleChannel(IOChannel):
+    """Terminal implementation. Looks up input/print at call time so that
+    unittest.mock.patch("builtins.input") still works."""
 
-        allowed_choices = (
-            ("1", "2", "3", "back", "quit")
-            if role == "admin"
-            else ("1", "back", "quit")
-        )
+    def read(self, prompt=""):
+        return input(prompt)
 
-        if choice in allowed_choices:
-            return choice
+    def read_secret(self, prompt=""):
+        return getpass(prompt)
 
-        print("Invalid input. Choose an option shown in your menu.")
+    def write(self, message=""):
+        print(message)
 
-def show_message(message):
-    """Print the supplied message or complaint list to the terminal.
+# --------------------------------------------------------------------------
+# Abstract validator + concrete validators (inheritance + polymorphism)
+# --------------------------------------------------------------------------
+class InputValidator(ABC):
+    """Base class: turn raw text into clean text, or raise ValueError."""
 
-    Other managers use this function for user-facing output. Returns None.
-    """
+    def __init__(self, error_message):
+        self._error_message = error_message
 
-    print(message)
+    @property
+    def error_message(self):
+        return self._error_message
 
-def show_goodbye():
-    """Print the goodbye message when the user exits.
+    def clean(self, raw):
+        """Template method: trim, then let the subclass accept or reject."""
+        value = raw.strip()
+        if not self._is_valid(value):
+            raise ValueError(self._error_message)
+        return self._transform(value)
 
-    Takes no arguments and returns None.
-    """
+    @abstractmethod
+    def _is_valid(self, value):
+        """Return True if the trimmed value is acceptable."""
 
-    print("\nGoodbye!")
+    def _transform(self, value):
+        """Hook: subclasses may change the accepted value. Default keeps it."""
+        return value
 
-def collect_name():
-    """Ask for the resident's name and return it as a trimmed string.
 
-    Repeat the question if the name is empty or contains anything other
-    than letters and spaces. No arguments are needed.
-    """
+class NameValidator(InputValidator):
+    def __init__(self):
+        super().__init__("Invalid name. Enter letters and spaces only.")
 
-    while True:
-        name = input("What is your name? ").strip()
+    def _is_valid(self, value):
+        return value.replace(" ", "").isalpha()
 
-        if name.replace(" ", "").isalpha():
-            return name
 
-        print("Invalid name. Enter letters and spaces only.")
-
-def collect_phone_number():
-    """Ask for a phone number and return the validated text.
-
-    Accept digits with an optional single '+' at the beginning. Repeat
-    invalid entries and keep any leading '+' or zeros in the returned string.
-    """
-
-    while True:
-        phone_number = input("What is your phone number? ").strip()
-
-        # Remove a leading '+' only for checking.
-        # Keep the original input for storage.
-        digits = phone_number.removeprefix("+")
-        if digits.isascii() and digits.isdecimal():
-            return phone_number
-
-        print(
+class PhoneValidator(InputValidator):
+    def __init__(self):
+        super().__init__(
             "Invalid phone number. Enter digits only, "
             "with an optional '+' at the beginning."
         )
 
-def get_required_input(prompt):
-    """Display the supplied prompt and return a nonempty, trimmed answer.
-
-    The prompt argument is the question shown to the user. Blank answers
-    cause the same question to be asked again.
-    """
-
-    while True:
-        answer = input(prompt).strip()
-
-        if answer:
-            return answer
-
-        print("This field cannot be empty. Please try again.")
+    def _is_valid(self, value):
+        # Remove a leading '+' only for checking; the stored text keeps it.
+        digits = value.removeprefix("+")
+        return digits.isascii() and digits.isdecimal()
 
 
-def collect_image_path():
-    """Ask whether to attach an image and validate the user's file path.
+class RequiredTextValidator(InputValidator):
+    def __init__(self):
+        super().__init__("This field cannot be empty. Please try again.")
 
-    Return 'no_image' if declined. Otherwise, repeat invalid paths until an
-    existing JPG, JPEG, PNG, or WEBP file is selected, then return its absolute
-    path as a string. Relative paths start from this project's folder.
-    """
+    def _is_valid(self, value):
+        return bool(value)
 
-    project_folder = Path(__file__).resolve().parent
-    allowed_extensions = {".jpg", ".jpeg", ".png", ".webp"}
+# --------------------------------------------------------------------------
+# Prompting helpers
+# --------------------------------------------------------------------------
+class ValidatedPrompter:
+    """Asks a question until a validator accepts the answer."""
 
-    # Ask whether the user wants to attach an image.
-    while True:
-        answer = input(
-            "Do you have an image to attach? (Y/N): "
-        ).strip().lower()
+    def __init__(self, channel):
+        self._channel = channel
 
-        if answer == "n":
-            return "no_image"
+    def ask(self, prompt, validator):
+        while True:
+            try:
+                return validator.clean(self._channel.read(prompt))
+            except ValueError as error:
+                self._channel.write(str(error))
 
-        if answer == "y":
-            break
-
-        print("Invalid input. Please enter Y or N.")
-
-    # If the user selected Y, ask for the image path.
-    while True:
-        image_path = input(
-            "Enter the image path "
-            "(e.g. test_images/leak.jpg): "
-        ).strip().strip("\"'")
-
-        if not image_path:
-            print("The image path cannot be empty.")
-            continue
-
-        path = Path(image_path).expanduser()
-
-        # Resolve relative paths from the folder containing this file.
-        if not path.is_absolute():
-            path = project_folder / path
-
-        if not path.is_file():
-            print("File not found. Please check the path.")
-            continue
-
-        if path.suffix.lower() not in allowed_extensions:
-            print("Please select a JPG, JPEG, PNG, or WEBP image.")
-            continue
-
-        return str(path.resolve())
+    def ask_choice(self, prompt, allowed, error_message, lowercase=False):
+        """Ask until the answer is one of `allowed`; return it."""
+        while True:
+            choice = self._channel.read(prompt).strip()
+            if lowercase:
+                choice = choice.lower()
+            if choice in allowed:
+                return choice
+            self._channel.write(error_message)
 
 
-def collect_complaint(complaint_id):
-    """Ask for complaint details and return the initial six-item list.
+class ImagePathCollector:
+    """Asks about an optional image and validates the file path."""
 
-    Collect a name, phone number, description, and optional image path.
-    Use the supplied complaint ID and generate a local timestamp, then return
-    [complaint_id, name, phone_number, description, image_path, date_time].
-    """
+    ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
+    NO_IMAGE = "no_image"
 
-    print("\n--- Submit a Complaint ---")
+    def __init__(self, channel, project_folder=None):
+        self._channel = channel
+        self._project_folder = project_folder or Path(__file__).resolve().parent
 
-    # Ask and validate each question before continuing.
-    name = collect_name()
-    phone_number = collect_phone_number()
-    description = get_required_input("What is your complaint? ")
-    image_path = collect_image_path()
+    def collect(self):
+        while True:
+            answer = self._channel.read(
+                "Do you have an image to attach? (Y/N): "
+            ).strip().lower()
+            if answer == "n":
+                return self.NO_IMAGE
+            if answer == "y":
+                break
+            self._channel.write("Invalid input. Please enter Y or N.")
 
-    # Record the submission time using the computer's local timezone.
-    date_time = datetime.now().astimezone().isoformat(timespec="seconds")
+        while True:
+            image_path = self._channel.read(
+                "Enter the image path (e.g. test_images/leak.jpg): "
+            ).strip().strip("\"'")
+            if not image_path:
+                self._channel.write("The image path cannot be empty.")
+                continue
+            path = Path(image_path).expanduser()
+            if not path.is_absolute():
+                path = self._project_folder / path
+            if not path.is_file():
+                self._channel.write("File not found. Please check the path.")
+                continue
+            if path.suffix.lower() not in self.ALLOWED_EXTENSIONS:
+                self._channel.write("Please select a JPG, JPEG, PNG, or WEBP image.")
+                continue
+            return str(path.resolve())
 
-    # Complaint ID is first; submission date and time are last.
-    return [complaint_id, name, phone_number, description, image_path, date_time]
+# --------------------------------------------------------------------------
+# Abstract menu + role-specific menus (polymorphism, no if/else on role)
+# --------------------------------------------------------------------------
+class Menu(ABC):
+    """A role's menu: what it shows and which answers it accepts."""
 
-def show_reports(reports):
-    """Display each saved complaint in a bordered Field / Value table.
+    @property
+    @abstractmethod
+    def option_lines(self):
+        """Numbered lines shown to the user."""
 
-    Wrap long values without shortening them and include all processing
-    details. Show a message for an empty list. Do not change saved records.
-    """
+    @property
+    @abstractmethod
+    def allowed_choices(self):
+        """Answers this role may type."""
 
-    if not reports:
-        show_message("\nNo saved reports found.")
-        return
 
-    show_message("\n--- Saved Reports ---")
-    for number, report in enumerate(reports, start=1):
-        show_message(f"\nReport {number}:")
-        # Keep the original complaint fields first, followed by its results.
-        labels = ["Complaint ID", "Name", "Phone number", "Description", "Image path", "Submitted at"]
-        rows = list(zip(labels, report[:6]))
+class ResidentMenu(Menu):
+    @property
+    def option_lines(self):
+        return ["1. Submit a complaint"]
+
+    @property
+    def allowed_choices(self):
+        return ("1", "back", "quit")
+
+
+class AdminMenu(ResidentMenu):
+    """An admin can do everything a resident can, plus two more options."""
+
+    @property
+    def option_lines(self):
+        return super().option_lines + [
+            "2. View reports",
+            "3. Review complaints awaiting approval",
+        ]
+
+    @property
+    def allowed_choices(self):
+        return ("1", "2", "3", "back", "quit")
+
+
+class MenuRegistry:
+    """Finds the right Menu for a role. New role = new entry (open/closed)."""
+
+    def __init__(self):
+        self._menus = {"resident": ResidentMenu(), "admin": AdminMenu()}
+
+    def for_role(self, role):
+        # Unknown roles get the safest (smallest) menu.
+        return self._menus.get(role, self._menus["resident"])
+
+# --------------------------------------------------------------------------
+# Report display
+# --------------------------------------------------------------------------
+class ReportFormatter:
+    """Turns saved report lists into bordered Field / Value table lines.
+    It only builds text; it never prints and never changes a report."""
+
+    LABELS = ["Complaint ID", "Name", "Phone number",
+              "Description", "Image path", "Submitted at"]
+    VALUE_WIDTH = 52
+
+    def format(self, report):
+        rows = list(zip(self.LABELS, report[:6]))
         if len(report) > 6 and isinstance(report[6], dict):
             for key, value in report[6].items():
                 rows.append((key.replace("_", " ").capitalize(), value))
 
-        field_width = max([len("Field")] + [len(label) for label, value in rows])
-        value_width = 52
-        border = "+-" + "-" * field_width + "-+-" + "-" * value_width + "-+"
-        show_message(border)
-        show_message(f"| {'Field':<{field_width}} | {'Value':<{value_width}} |")
-        show_message(border)
-
+        field_width = max([len("Field")] + [len(label) for label, _ in rows])
+        border = ("+-" + "-" * field_width + "-+-"
+                  + "-" * self.VALUE_WIDTH + "-+")
+        lines = [border,
+                 f"| {'Field':<{field_width}} | {'Value':<{self.VALUE_WIDTH}} |",
+                 border]
         for label, value in rows:
-            # Convert lists and flags into readable text without editing them.
-            if isinstance(value, bool):
-                text = "Yes" if value else "No"
-            elif isinstance(value, list):
-                text = ", ".join(str(item) for item in value) or "None"
-            elif value is None:
-                text = "N/A"
-            else:
-                text = str(value)
-
-            # Keep existing line breaks, including those in emergency alerts.
-            lines = []
-            for paragraph in text.splitlines() or [""]:
-                lines.extend(wrap(paragraph, width=value_width) or [""])
-            for index, line in enumerate(lines):
+            for index, line in enumerate(self._wrap(self._to_text(value))):
                 field = label if index == 0 else ""
-                show_message(f"| {field:<{field_width}} | {line:<{value_width}} |")
-        show_message(border)
+                lines.append(
+                    f"| {field:<{field_width}} | {line:<{self.VALUE_WIDTH}} |"
+                )
+        lines.append(border)
+        return lines
 
-def show_welcome():
-    """Ask whether the user is a resident or admin; return '1', '2', or 'quit'.
+    @staticmethod
+    def _to_text(value):
+        if isinstance(value, bool):
+            return "Yes" if value else "No"
+        if isinstance(value, list):
+            return ", ".join(str(item) for item in value) or "None"
+        if value is None:
+            return "N/A"
+        return str(value)
 
-    Repeat invalid choices. Selecting Admin still requires a successful login.
-    """
+    def _wrap(self, text):
+        lines = []
+        for paragraph in text.splitlines() or [""]:
+            lines.extend(wrap(paragraph, width=self.VALUE_WIDTH) or [""])
+        return lines
 
-    while True:
-        print("\nWelcome to the Condo Fault Reporting System")
-        print("1. Resident")
-        print("2. Admin")
-        print("Type 'quit' to exit.")
-        choice = input("Are you a resident or admin? ").strip().lower()
-        if choice in ("1", "2", "quit"):
-            return choice
-        print("Invalid input. Enter 1, 2, or quit.")
+# --------------------------------------------------------------------------
+# The IO Manager (facade used by main.py)
+# --------------------------------------------------------------------------
+class IOManager:
+    """All terminal input/output for the condo fault reporting system."""
 
-def collect_admin_credentials():
-    """Return the entered username and password, or None to cancel login.
+    HAZARD_NONE_TEXT = "0. No reported hazards\nback. Go back without approving"
 
-    Hide password entry in an interactive terminal. Type back at the username
-    prompt to return to the welcome screen. Authentication happens in logic.
-    """
+    def __init__(self, channel=None):
+        # Aggregation: the channel is supplied from outside and can be reused.
+        self._channel = channel if channel is not None else ConsoleChannel()
+        # Composition: these helpers are created and owned by this manager.
+        self._prompter = ValidatedPrompter(self._channel)
+        self._formatter = ReportFormatter()
+        self._menus = MenuRegistry()
+        self._images = ImagePathCollector(self._channel)
+        self._name_validator = NameValidator()
+        self._phone_validator = PhoneValidator()
+        self._required_validator = RequiredTextValidator()
 
-    username = input("Admin username (or 'back' to cancel): ").strip()
-    if username.lower() == "back":
-        return None
-    password = getpass("Admin password: ")
-    return username, password
+    # ----- simple output ---------------------------------------------------
+    def show_message(self, message):
+        self._channel.write(message)
 
-def show_report_menu():
-    """Return a report action: status, view one, edit, delete, or back (1-5).
+    def show_goodbye(self):
+        self._channel.write("\nGoodbye!")
 
-    Repeat invalid choices. Takes no arguments and does not change reports.
-    """
+    # ----- menus -----------------------------------------------------------
+    def show_welcome(self):
+        while True:
+            self._channel.write("\nWelcome to the Condo Fault Reporting System")
+            self._channel.write("1. Resident")
+            self._channel.write("2. Admin")
+            self._channel.write("Type 'quit' to exit.")
+            choice = self._channel.read("Are you a resident or admin? ").strip().lower()
+            if choice in ("1", "2", "quit"):
+                return choice
+            self._channel.write("Invalid input. Enter 1, 2, or quit.")
 
-    while True:
-        show_message(
-            "\n1. Update complaint status\n2. View complaint by ID"
-            "\n3. Edit complaint\n4. Delete complaint\n5. Go back to main menu"
+    def show_menu(self, role="resident"):
+        menu = self._menus.for_role(role)
+        while True:
+            self._channel.write("\n========================================")
+            self._channel.write(f"Condo Fault Reporting System - {role.title()}")
+            self._channel.write("========================================")
+            for line in menu.option_lines:
+                self._channel.write(line)
+            self._channel.write(
+                "Type 'back' to return to the welcome screen, or 'quit' to exit."
+            )
+            choice = self._channel.read("Choose an option: ").strip().lower()
+            if choice in menu.allowed_choices:
+                return choice
+            self._channel.write("Invalid input. Choose an option shown in your menu.")
+
+    def show_report_menu(self):
+        while True:
+            self.show_message(
+                "\n1. Update complaint status\n2. View complaint by ID"
+                "\n3. Edit complaint\n4. Delete complaint\n5. Go back to main menu"
+            )
+            choice = self._channel.read("Choose an option: ").strip()
+            if choice in ("1", "2", "3", "4", "5"):
+                return choice
+            self.show_message("Invalid input. Enter 1, 2, 3, 4, or 5.")
+
+    # ----- field collection ------------------------------------------------
+    def collect_name(self):
+        return self._prompter.ask("What is your name? ", self._name_validator)
+
+    def collect_phone_number(self):
+        return self._prompter.ask("What is your phone number? ", self._phone_validator)
+
+    def get_required_input(self, prompt):
+        return self._prompter.ask(prompt, self._required_validator)
+
+    def collect_image_path(self):
+        return self._images.collect()
+
+    def collect_complaint(self, complaint_id):
+        """Return [complaint_id, name, phone, description, image_path, date_time]."""
+        self.show_message("\n--- Submit a Complaint ---")
+        name = self.collect_name()
+        phone_number = self.collect_phone_number()
+        description = self.get_required_input("What is your complaint? ")
+        image_path = self.collect_image_path()
+        date_time = datetime.now().astimezone().isoformat(timespec="seconds")
+        return [complaint_id, name, phone_number, description, image_path, date_time]
+
+    def collect_admin_credentials(self):
+        """Return (username, password), or None if the admin types 'back'."""
+        username = self._channel.read("Admin username (or 'back' to cancel): ").strip()
+        if username.lower() == "back":
+            return None
+        password = self._channel.read_secret("Admin password: ")
+        return username, password
+
+    # ----- report display --------------------------------------------------
+    def show_reports(self, reports):
+        if not reports:
+            self.show_message("\nNo saved reports found.")
+            return
+        self.show_message("\n--- Saved Reports ---")
+        for number, report in enumerate(reports, start=1):
+            self.show_message(f"\nReport {number}:")
+            for line in self._formatter.format(report):
+                self.show_message(line)
+
+    # ----- admin report actions -------------------------------------------
+    def collect_report_id(self):
+        choice = self.get_required_input(
+            "Enter complaint_id (e.g. complaint_001), or 'back' to go back to main menu: "
         )
-        choice = input("Choose an option: ").strip()
-        if choice in ("1", "2", "3", "4", "5"):
-            return choice
-        show_message("Invalid input. Enter 1, 2, 3, 4, or 5.")
+        return None if choice.lower() in ("back", "go back") else choice
 
-def collect_report_id():
-    """Return the entered complaint ID, or None to go back to the main menu.
+    def choose_complaint_status(self):
+        statuses = {"1": "Contractor contacted", "2": "Pending Action", "3": "Resolved"}
+        while True:
+            self.show_message(
+                "\n1. Contractor contacted\n2. Pending Action\n3. Resolved\n4. Go back"
+            )
+            choice = self._channel.read("Choose a status: ").strip()
+            if choice == "4":
+                return None
+            if choice in statuses:
+                return statuses[choice]
+            self.show_message("Invalid input. Enter 1, 2, 3, or 4.")
 
-    Accept 'back' or 'go back' to cancel. Repeat blank entries.
-    """
+    def collect_report_edits(self, report):
+        """Return an edited copy on Save, or None on Go back."""
+        draft = deepcopy(report)
+        while True:
+            self.show_reports([draft])
+            self.show_message(
+                "\n1. Edit name\n2. Edit phone number\n3. Edit description"
+                "\n4. Replace or remove image\n5. Save changes\n6. Go back without saving"
+            )
+            choice = self._channel.read("Choose an option: ").strip()
+            if choice == "1":
+                draft[1] = self.collect_name()
+            elif choice == "2":
+                draft[2] = self.collect_phone_number()
+            elif choice == "3":
+                draft[3] = self.get_required_input("Enter the updated complaint: ")
+            elif choice == "4":
+                draft[4] = self.collect_image_path()
+            elif choice == "5":
+                return draft
+            elif choice == "6":
+                return None
+            else:
+                self.show_message("Invalid input. Enter a number from 1 to 6.")
 
-    choice = get_required_input(
-        "Enter complaint_id (e.g. complaint_001), or 'back' to go back to main menu: "
-    )
-    return None if choice.lower() in ("back", "go back") else choice
+    def confirm_report_deletion(self, report):
+        self.show_reports([report])
+        while True:
+            answer = self._channel.read(
+                f"Delete complaint {report[0]} permanently? (Y/N): "
+            ).strip().lower()
+            if answer == "y":
+                return True
+            if answer in ("n", "back", "go back"):
+                return False
+            self.show_message("Invalid input. Enter Y or N.")
 
-def choose_complaint_status():
-    """Return the chosen status string, or None for Go back to the main menu.
+    # ----- manual review (used when AI is unavailable) ---------------------
+    def choose_manual_option(self, prompt, options):
+        """Return the chosen value, or None for the final Go back option."""
+        valid_numbers = [str(n) for n in range(1, len(options) + 1)]
+        while True:
+            self.show_message(prompt)
+            for number, value in enumerate(options, 1):
+                self.show_message(f"{number}. {value}")
+            self.show_message(f"{len(options) + 1}. Go back without approving")
+            choice = self._channel.read("Choose an option: ").strip().lower()
+            if choice in ("back", str(len(options) + 1)):
+                return None
+            if choice in valid_numbers:
+                return options[int(choice) - 1]
+            self.show_message("Invalid choice. Choose an option shown above.")
 
-    Prompt with the three supported statuses and repeat invalid choices.
-    """
+    def _collect_hazards(self, risks):
+        """Return a list of chosen hazards, or None to cancel."""
+        valid_numbers = [str(n) for n in range(1, len(risks) + 1)]
+        while True:
+            self.show_message("Select only hazards supported by the complaint:")
+            for number, risk in enumerate(risks, 1):
+                self.show_message(f"{number}. {risk.replace('_', ' ')}")
+            self.show_message(self.HAZARD_NONE_TEXT)
+            choice = self._channel.read("Hazard numbers separated by commas: ").strip().lower()
+            if choice == "back":
+                return None
+            if choice == "0":
+                return []
+            picks = [item.strip() for item in choice.split(",")]
+            if all(item in valid_numbers for item in picks):
+                return list(dict.fromkeys(risks[int(item) - 1] for item in picks))
+            self.show_message("Enter valid hazard numbers, 0 for none, or back.")
 
-    statuses = {"1": "Contractor contacted", "2": "Pending Action", "3": "Resolved"}
-    while True:
-        show_message("\n1. Contractor contacted\n2. Pending Action\n3. Resolved\n4. Go back")
-        choice = input("Choose a status: ").strip()
-        if choice == "4":
-            return None
-        if choice in statuses:
-            return statuses[choice]
-        show_message("Invalid input. Enter 1, 2, 3, or 4.")
-
-def collect_report_edits(report):
-    """Return an edited copy on Save, or None on Go back without saving.
-    Allow name, phone, description, and image edits using existing validators.
-    Preserve ID, date, and processing details for the workflow to handle.
-    Selecting image and answering N removes the existing attachment.
-    """
-
-    draft = deepcopy(report)
-    while True:
-        show_reports([draft])
-        show_message(
-            "\n1. Edit name\n2. Edit phone number\n3. Edit description"
-            "\n4. Replace or remove image\n5. Save changes\n6. Go back without saving"
+    def collect_manual_analysis(self, complaint, categories, risks):
+        """Return the admin's approved analysis dict, or None if cancelled."""
+        self.show_reports([complaint])
+        self.show_message(
+            "Review the original description and any attached image before approving."
         )
-        choice = input("Choose an option: ").strip()
-        if choice == "1":
-            draft[1] = collect_name()
-        elif choice == "2":
-            draft[2] = collect_phone_number()
-        elif choice == "3":
-            draft[3] = get_required_input("Enter the updated complaint: ")
-        elif choice == "4":
-            draft[4] = collect_image_path()
-        elif choice == "5":
-            return draft
-        elif choice == "6":
+        self.show_message(
+            "If details are insufficient, go back and leave the complaint awaiting review."
+        )
+        summary = self.get_required_input("Readable issue summary (or 'back' to cancel): ")
+        if summary.lower() == "back":
             return None
-        else:
-            show_message("Invalid input. Enter a number from 1 to 6.")
-
-def confirm_report_deletion(report):
-    """Show the selected report and return True only for an explicit Y.
-
-    N or back cancels deletion. Repeat other responses without changing data.
-    """
-
-    show_reports([report])
-    while True:
-        answer = input(f"Delete complaint {report[0]} permanently? (Y/N): ").strip().lower()
-        if answer == "y":
-            return True
-        if answer in ("n", "back", "go back"):
-            return False
-        show_message("Invalid input. Enter Y or N.")
-
-def choose_manual_option(prompt, options):
-    """Return one selected value, or None for the final Go back option."""
-
-    while True:
-        show_message(prompt)
-        for number, value in enumerate(options, 1):
-            show_message(f"{number}. {value}")
-        show_message(f"{len(options) + 1}. Go back without approving")
-        choice = input("Choose an option: ").strip().lower()
-        if choice in ("back", str(len(options) + 1)):
+        category = self.choose_manual_option("Fault category:", categories)
+        if category is None:
             return None
-        if choice in [str(number) for number in range(1, len(options) + 1)]:
-            return options[int(choice) - 1]
-        show_message("Invalid choice. Choose an option shown above.")
+        selected_risks = self._collect_hazards(risks)
+        if selected_risks is None:
+            return None
+        shared = self.choose_manual_option("Is there a hazard in a common area?", ["Yes", "No"])
+        if shared is None:
+            return None
+        analysis = {
+            "fault_category": category,
+            "summary": summary,
+            "risk_indicators": selected_risks,
+            "common_area_hazard": shared == "Yes",
+            "is_unclear": False,
+        }
+        self.show_message(json.dumps(analysis, indent=2))
+        if self.choose_manual_option("Confirm your review:", ["Approve complaint"]) is None:
+            return None
+        return analysis
 
+# --------------------------------------------------------------------------
+# Backward-compatible entry points.
+# main.py and the existing tests still call io_manager.<function>(...).
+# Each one only forwards to the single IOManager object above.
+# --------------------------------------------------------------------------
+_manager = IOManager()
 
+def show_menu(role="resident"): return _manager.show_menu(role)
+def show_message(message): return _manager.show_message(message)
+def show_goodbye(): return _manager.show_goodbye()
+def collect_name(): return _manager.collect_name()
+def collect_phone_number(): return _manager.collect_phone_number()
+def get_required_input(prompt): return _manager.get_required_input(prompt)
+def collect_image_path(): return _manager.collect_image_path()
+def collect_complaint(complaint_id): return _manager.collect_complaint(complaint_id)
+def show_reports(reports): return _manager.show_reports(reports)
+def show_welcome(): return _manager.show_welcome()
+def collect_admin_credentials(): return _manager.collect_admin_credentials()
+def show_report_menu(): return _manager.show_report_menu()
+def collect_report_id(): return _manager.collect_report_id()
+def choose_complaint_status(): return _manager.choose_complaint_status()
+def collect_report_edits(report): return _manager.collect_report_edits(report)
+def confirm_report_deletion(report): return _manager.confirm_report_deletion(report)
+def choose_manual_option(prompt, options): return _manager.choose_manual_option(prompt, options)
 def collect_manual_analysis(complaint, categories, risks):
-    """Collect an admin's classification and explicit approval, or return None.
-
-    Show the original complaint, including its image path. Ask for a readable
-    summary, category, observed hazards and common-area risk. Never supply
-    default hazard guesses when AI is unavailable. Back cancels the review.
-    """
-
-    show_reports([complaint])
-    show_message("Review the original description and any attached image before approving.")
-    show_message("If details are insufficient, go back and leave the complaint awaiting review.")
-    summary = get_required_input("Readable issue summary (or 'back' to cancel): ")
-    if summary.lower() == "back":
-        return None
-    category = choose_manual_option("Fault category:", categories)
-    if category is None:
-        return None
-    while True:
-        show_message("Select only hazards supported by the complaint:")
-        for number, risk in enumerate(risks, 1):
-            show_message(f"{number}. {risk.replace('_', ' ')}")
-        show_message("0. No reported hazards\nback. Go back without approving")
-        choice = input("Hazard numbers separated by commas: ").strip().lower()
-        if choice == "back":
-            return None
-        if choice == "0":
-            selected_risks = []
-            break
-        choices = [item.strip() for item in choice.split(",")]
-        if all(item in [str(number) for number in range(1, len(risks) + 1)] for item in choices):
-            selected_risks = list(dict.fromkeys(risks[int(item) - 1] for item in choices))
-            break
-        show_message("Enter valid hazard numbers, 0 for none, or back.")
-    shared = choose_manual_option("Is there a hazard in a common area?", ["Yes", "No"])
-    if shared is None:
-        return None
-    analysis = {
-        "fault_category": category,
-        "summary": summary,
-        "risk_indicators": selected_risks,
-        "common_area_hazard": shared == "Yes",
-        "is_unclear": False,
-    }
-    show_message(json.dumps(analysis, indent=2))
-    if choose_manual_option("Confirm your review:", ["Approve complaint"]) is None:
-        return None
-    return analysis
+    return _manager.collect_manual_analysis(complaint, categories, risks)
