@@ -192,6 +192,22 @@ def test_manual_analysis():
     io = IOManager(FakeChannel(["Pipe is leaking", "1", "9", "back"]))
     check("invalid hazard then back cancels",
           io.collect_manual_analysis(complaint, categories, risks), None)
+
+def test_admin_pending_notification():
+    channel = FakeChannel(["1"])
+    IOManager(channel).show_menu("admin", pending_count=3)
+    check("admin sees pending notice",
+          any("NOTICE: 3 complaint(s)" in line for line in channel.output), True)
+
+    channel = FakeChannel(["1"])
+    IOManager(channel).show_menu("admin", pending_count=0)
+    check("no notice when count is zero",
+          any("NOTICE" in line for line in channel.output), False)
+
+    channel = FakeChannel(["1"])
+    IOManager(channel).show_menu("resident", pending_count=3)
+    check("resident never sees the notice",
+          any("NOTICE" in line for line in channel.output), False)
     
 if __name__ == "__main__":
     test_channel_interface()
@@ -207,4 +223,5 @@ if __name__ == "__main__":
     test_show_reports_empty()
     test_report_actions()
     test_manual_analysis()
+    test_admin_pending_notification()
     print("\nAll IOManager tests passed!")
