@@ -55,3 +55,24 @@ class AIManagerTests(unittest.TestCase):
                 ["Resident description: pipe leak at corridor"]
             )
 
+    def test_api_errors(self):
+            """Convert timeout and API errors into failure markers."""
+            errors = [
+                TimeoutError("Timed out"),
+                RuntimeError("API failed"),
+            ]
+    
+            for error in errors:
+                with self.subTest(error=type(error).__name__):
+                    self.generate.side_effect = error
+    
+                    with self.assertLogs("ai_manager", level="ERROR"):
+                        result = self.manager.analyze_complaint(
+                            self.complaint
+                        )
+    
+                    self.assertEqual(result, {
+                        "ai_available": False,
+                        "error_type": type(error).__name__,
+                    })
+
