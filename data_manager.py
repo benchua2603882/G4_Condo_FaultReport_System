@@ -62,7 +62,25 @@ class JsonReportRepository(ReportRepository):
                     report[6].setdefault("status", "Pending Action")
         return reports
 
+    def get_next_complaint_id(self):
+        """Return the next complaint_001-style ID across accepted and pending reports.
 
+        Start at 001 for an empty or missing file. Use the highest saved numeric
+        ID or the record count (for older prefixed IDs), whichever is larger, plus one.
+        Reading the file each time preserves numbering across application restarts.
+        Saving either an accepted report or a pending review reserves its ID. File errors
+        are passed to the caller rather than resetting the sequence.
+        """
+
+        reports = self.load_reports()
+        highest_number = len(reports)
+        for report in reports:
+            if isinstance(report, list) and report and isinstance(report[0], str):
+                match = re.fullmatch(r"complaint_([0-9]+)", report[0])
+                if match:
+                    highest_number = max(highest_number, int(match.group(1)))
+
+        return f"complaint_{highest_number + 1:03d}"
     def save_report(self, complaint, actor="Resident"):
         """Save an accepted or explicitly pending-manual-review seven-item complaint.
 
@@ -114,6 +132,14 @@ class JsonReportRepository(ReportRepository):
         finally:
             if temporary_path is not None and temporary_path.exists():
                 temporary_path.unlink()
+
+    def _parse_filter_date(self, value):
+        """Return an optional ISO date, rejecting ambiguous or invalid values."""
+        if not value:
+            return None
+        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", value):
+            raise ValueError("Use dates in YYYY-MM-DD format.")
+        return date.fromisoformat(value)
                  
     def get_report(self, complaint_id):
         """Return a saved seven-item report by ID, or raise ValueError if missing."""
