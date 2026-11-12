@@ -160,6 +160,16 @@ class ReportApplication:
             show_all_reports = choice not in ("2", "5", "6")
 
 
+    # New feature: display history for the selected complaint.
+    def view_report_history(self, reports):
+        """Display the selected complaint's history using the shared table style."""
+        report = self.select_report(reports)
+        if report is None:
+            return False
+        self._io.show_report_history(report)
+        return True
+
+
     def view_one_report(self, reports):
         """Display one report selected by ID; return False if selection is cancelled."""
 
