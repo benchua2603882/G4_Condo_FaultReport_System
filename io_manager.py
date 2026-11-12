@@ -177,6 +177,10 @@ class Menu(ABC):
     def allowed_choices(self):
         """Answers this role may type."""
 
+    def notification_lines(self, pending_count=None):
+        """Extra lines shown above the options. Default: none."""
+        return []
+
 
 class ResidentMenu(Menu):
     @property
@@ -201,7 +205,11 @@ class AdminMenu(ResidentMenu):
     @property
     def allowed_choices(self):
         return ("1", "2", "3", "back", "quit")
-
+    
+    def notification_lines(self, pending_count=None):
+        if pending_count:  # None and 0 show nothing
+            return [f"NOTICE: {pending_count} complaint(s) pending manual review."]
+        return []
 
 class MenuRegistry:
     """Finds the right Menu for a role. New role = new entry (open/closed)."""
@@ -300,12 +308,14 @@ class IOManager:
                 return choice
             self._channel.write("Invalid input. Enter 1, 2, or quit.")
 
-    def show_menu(self, role="resident"):
+    def show_menu(self, role="resident", pending_count=None):
         menu = self._menus.for_role(role)
         while True:
             self._channel.write("\n========================================")
             self._channel.write(f"Condo Fault Reporting System - {role.title()}")
             self._channel.write("========================================")
+            for line in menu.notification_lines(pending_count):
+                self._channel.write(line)
             for line in menu.option_lines:
                 self._channel.write(line)
             self._channel.write(
@@ -500,7 +510,7 @@ class IOManager:
 # --------------------------------------------------------------------------
 _manager = IOManager()
 
-def show_menu(role="resident"): return _manager.show_menu(role)
+def show_menu(role="resident", pending_count=None): return _manager.show_menu(role, pending_count)
 def show_message(message): return _manager.show_message(message)
 def show_goodbye(): return _manager.show_goodbye()
 def collect_name(): return _manager.collect_name()
