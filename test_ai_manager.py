@@ -76,3 +76,62 @@ class AIManagerTests(unittest.TestCase):
                         "error_type": type(error).__name__,
                     })
 
+    def test_invalid_responses(self):
+        """Reject empty, malformed and schema-invalid responses."""
+        missing = self.valid.copy()
+        del missing["summary"]
+
+        cases = [
+            ("empty", "", "ValueError"),
+            ("malformed JSON", "{broken", "JSONDecodeError"),
+            ("missing field", json.dumps(missing), "ValueError"),
+            (
+                "blank summary",
+                json.dumps(dict(self.valid, summary=" ")),
+                "ValueError",
+            ),
+            (
+                "wrong type",
+                json.dumps(dict(self.valid, risk_indicators="fire")),
+                "ValueError",
+            ),
+            (
+                "wrong boolean",
+                json.dumps(dict(self.valid, is_unclear="false")),
+                "ValueError",
+            ),
+            (
+                "unknown category",
+                json.dumps(dict(self.valid, fault_category="unknown")),
+                "ValueError",
+            ),
+            (
+                "unknown risk",
+                json.dumps(dict(self.valid, risk_indicators=["unknown"])),
+                "ValueError",
+            ),
+            (
+                "extra field",
+                json.dumps(dict(self.valid, severity_score=9)),
+                "ValueError",
+            ),
+        ]
+
+        for label, response, error_type in cases:
+            with self.subTest(case=label):
+                self.generate.return_value.text = response
+
+                with self.assertLogs("ai_manager", level="ERROR"):
+                    result = self.manager.analyze_complaint(
+                        self.complaint
+                    )
+
+                self.assertEqual(result, {
+                    "ai_available": False,
+                    "error_type": error_type,
+                })
+
+
+if __name__ == "__main__":
+    unittest.main(verbosity=2)
+
