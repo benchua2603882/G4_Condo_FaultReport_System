@@ -170,6 +170,25 @@ class ReportApplication:
         return True
 
 
+    # New feature: search saved complaints using combined filters.
+    def search_reports(self):
+        """Collect combined filters, query saved reports and display matching rows."""
+        filters = self._io.collect_report_filters(self._ai.categories)
+        if filters is None:
+            return False
+        try:
+            matches = self._data.filter_reports(**filters)
+        except (OSError, ValueError) as error:
+            self._io.show_message(f"Unable to search reports: {error}")
+            return True
+        self._io.show_message(f"Search results: {len(matches)} complaint(s) matched.")
+        if matches:
+            self._io.show_reports(matches)
+        else:
+            self._io.show_message("No complaints match these filters. Try fewer filters or another keyword.")
+        return True
+
+
     def view_one_report(self, reports):
         """Display one report selected by ID; return False if selection is cancelled."""
 
