@@ -57,5 +57,5 @@ Run:
 
 python -m unittest test_data_manager -v
 
-Tests use temporary files rather than real complaint records.
+Test uses temporary files rather than real complaint records.
 Record the actual test result after running the command.
