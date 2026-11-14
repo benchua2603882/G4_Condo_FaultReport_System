@@ -1,98 +1,70 @@
-RISK_SCORES = {
-    "fire": 9,
-    "smoke": 8,
-    "trapped_person": 9,
-    "exposed_wiring": 6,
-    "electric_sparks": 8,
-    "flooding": 6,
-    "active_leak": 3,
-    "trip_hazard": 3,
-    "service_outage": 4,
-}
-
-CONTRACTORS = {
-    "plumbing": "Plumbing Contractor",
-    "electrical": "Electrical Contractor",
-    "lift": "Lift Maintenance Contractor",
-    "general maintenance": "General Maintenance Contractor",
-}
-
-DEFAULT_CONTRACTOR = "General Maintenance Contractor"
+"""Fault rules and priorities, independent of terminal, storage and Gemini."""
 
 
 class EmergencyPriorityRule:
-    """Priority rule that only fires for emergencies."""
+    """Specialise priority selection for fire or severe shared-area hazards."""
 
-    def evaluate(self, ai_result):
-        """Return "EMERGENCY" for fire, or severity >= 8 in a common area; else None.
-
-        Reported fire is always EMERGENCY, including inside a private apartment.
-        Returning None means "this rule does not apply, ask the next rule".
-        """
-
-        if "fire" in ai_result.get("risk_indicators", []):
-            return "EMERGENCY"
-        if ai_result["severity_score"] >= 8 and ai_result["common_area_hazard"]:
+    def evaluate(self, report):
+        """Return EMERGENCY for the original multi-condition emergency rule."""
+        if "fire" in report.get("risk_indicators", []) or (
+            report["severity_score"] >= 8 and report["common_area_hazard"]
+        ):
             return "EMERGENCY"
         return None
 
 
 class ScorePriorityRule:
-    """Priority rule that maps a severity score to HIGH, MEDIUM or LOW."""
+    """Select a priority when severity reaches a configured minimum."""
 
-    def __init__(self, high_at=6, medium_at=3):
-        """Store the severity thresholds so they can be changed per rule."""
+    def __init__(self, minimum, priority):
+        """Store one threshold and its result without changing application rules."""
+        self._minimum = minimum
+        self._priority = priority
 
-        self.high_at = high_at
-        self.medium_at = medium_at
-
-    def evaluate(self, ai_result):
-        """Return HIGH, MEDIUM or LOW from severity_score."""
-
-        severity = ai_result["severity_score"]
-        if severity >= self.high_at:
-            return "HIGH"
-        if severity >= self.medium_at:
-            return "MEDIUM"
-        return "LOW"
+    def evaluate(self, report):
+        """Return the configured label or None when the rule does not apply."""
+        return self._priority if report["severity_score"] >= self._minimum else None
 
 
 class LogicManager:
-    """Applies the condo business rules to a validated AI report."""
+    """Aggregate independent priority rules and apply the existing fault policy."""
 
-    def __init__(self, priority_rules=None, risk_scores=None, contractors=None):
-        """Set up the interchangeable priority rules and lookup tables.
-
-        Rules run in order and the first one that returns a priority wins.
-        Defaults are emergency rule first, then the severity-score rule.
-        """
-
-        self.priority_rules = priority_rules or [EmergencyPriorityRule(), ScorePriorityRule()]
-        self.risk_scores = risk_scores or RISK_SCORES
-        self.contractors = contractors or CONTRACTORS
+    def __init__(self, priority_rules=None):
+        """Use supplied rule objects or the unchanged Part 1 priority sequence."""
+        self._priority_rules = tuple(priority_rules) if priority_rules is not None else (
+            EmergencyPriorityRule(), ScorePriorityRule(6, "HIGH"),
+            ScorePriorityRule(3, "MEDIUM"),
+        )
+        self._risk_scores = {
+            "fire": 9,
+            "smoke": 8,
+            "trapped_person": 9,
+            "exposed_wiring": 6,
+            "electric_sparks": 8,
+            "flooding": 6,
+            "active_leak": 3,
+            "trip_hazard": 3,
+            "service_outage": 4,
+        }
 
     def determine_severity(self, ai_result):
         """Calculate an integer severity score from validated AI risk indicators.
 
-        Look up each hazard in the risk score table and return the highest score.
+        Look up each hazard in the stored risk scores and return the highest score.
         Return 1 for routine maintenance when no hazards are listed.
         """
 
         severity = 1
         for risk in ai_result["risk_indicators"]:
-            severity = max(severity, self.risk_scores[risk])
+            severity = max(severity, self._risk_scores[risk])
         return severity
 
     def determine_priority(self, ai_result):
-        """Return the first priority any rule gives, or LOW if none does.
-
-        Expects severity_score and common_area_hazard in ai_result.
-        """
-
-        for rule in self.priority_rules:
-            priority = rule.evaluate(ai_result)
-            if priority is not None:
-                return priority
+        """Use the first matching rule; rules share the same non-mutating contract."""
+        for rule in self._priority_rules:
+            result = rule.evaluate(ai_result)
+            if result is not None:
+                return result
         return "LOW"
 
     def assign_contractor(self, ai_result):
@@ -102,7 +74,16 @@ class LogicManager:
         Use the General Maintenance Contractor for other categories.
         """
 
-        return self.contractors.get(ai_result["fault_category"], DEFAULT_CONTRACTOR)
+        category = ai_result["fault_category"]
+
+        contractors = {
+            "plumbing": "Plumbing Contractor",
+            "electrical": "Electrical Contractor",
+            "lift": "Lift Maintenance Contractor",
+            "general maintenance": "General Maintenance Contractor",
+        }
+
+        return contractors.get(category, "General Maintenance Contractor")
 
     def calculate_sla(self, priority):
         """Convert a priority label into a response-time target string.
@@ -191,7 +172,7 @@ class LogicManager:
             "priority": priority,
             "contractor": contractor,
             "response_sla": sla,
-            "alert": alert,
+            "alert": alert
         }
         if "emergency_action" in enriched:
             processed["emergency_action"] = enriched["emergency_action"]
