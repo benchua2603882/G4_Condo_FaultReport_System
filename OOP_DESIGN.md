@@ -237,6 +237,24 @@ Not covered by any test file in this repository:
 | Invalid search dates | Impossible date, wrong format, start after end | `filter_reports` raises `ValueError`; `IOManager` checks first | Form asks again or cancels; nothing is written | Told what to correct |
 | Older saved records | Saved before status or history existed | `load_reports` defaults the status; history is empty | Defaults are shown without rewriting the file; no events are invented | Sees Pending Action and "No activity history recorded" |
 
+## Workflow regression
+
+Each workflow below is a complete user journey, listed with the objects that
+take part and the tests that replay it. Failure points refer to rows of the
+exception table above, so errors are recorded once.
+
+| Workflow | Steps and owners | Regression tests | Failure points |
+| --- | --- | --- | --- |
+| Resident submits a complaint | `IOManager` collects and validates input, `ReportApplication.process_new_report` coordinates, `AIManager` analyses, `LogicManager.process_fault` applies the rules, `JsonReportRepository.save_report` stores the record | `test_pipeline.test_pipeline`, `test_complaint_ids`, `test_rules`; `test_oop.test_injected_provider_runs_real_pipeline` | AI request fails, malformed AI output, unclear complaint, corrupt file, failed write |
+| AI failure, then manual review | The failed analysis is saved as Pending Manual Review; an admin logs in, opens option 3, classifies the complaint with `IOManager.collect_manual_analysis`, and `approve_pending_review` replaces the record | `test_pipeline.test_manual_review`; `test_oop.test_provider_timeout_preserves_manual_review` | Admin cancels, failed write keeps the pending record, status change before approval, record changed after loading |
+| Admin manages reports | After login the admin updates status, views by ID, edits, deletes, opens history or searches | `test_pipeline.test_status_updates`, `test_crud`; `test_admin_features.py` | Unknown ID, invalid status, edit re-analysis returns unclear or fails, failed write, deletion not confirmed, invalid search dates |
+| Role and login control | The welcome screen chooses a role; admin needs `DemoAuthenticator`; the controller re-checks the role for each choice | `test_pipeline.test_role_access`, `test_manual_review` | Wrong credentials, cancelled login, unauthorised menu choice |
+| Admin notification refresh | The pending count is read after login and after every return to the admin menu | `test_admin_features.py` | Storage read error shows "unavailable", never zero |
+
+A workflow passes when the stored `reports.json` bytes either change exactly
+as intended or stay identical after a cancelled or failed step. The tests
+assert both outcomes.
+
 ## Verification and limits
 
 The added features keep the same boundaries: the controller fetches pending
