@@ -3,8 +3,7 @@
 This branch refactors the application and adds admin pending-review notifications,
 complaint activity history, and report search/filtering. The original complaint
 fields, Gemini request, business rules, CRUD operations and manual review remain.
-Offline CI is configured in `.github/workflows/tests.yml`. Docker changes remain
-a separate pending integration step and must be reverified on the final branch.
+The automatic test commands are in `.github/workflows/tests.yml`. Docker was tested on appNEW on 16 November 2026. See README.md for setup steps and results.
 
 ## Migration from Part 1
 
@@ -293,12 +292,12 @@ time, and deleting the highest complaint ID may allow its reuse, as before.
 
 This document describes the current OOP implementation and three admin improvements,
 not a finished Part 2 submission. Confirm the advanced-feature requirement against
-the rubric separately; Docker, CI and final submission documents remain deferred.
+the rubric separately; hosted CI and final submission documents still need verification.
 
 ## Reference alignment verification on 16 November 2026
 
-The ten production Python modules now match the original appNEW reference source
-byte-for-byte. This restores the reference IOManager constructor, history tables,
+Before the Docker changes, the ten application modules matched the original appNEW reference source
+exactly. Docker setup then added REPORTS_FILE support to main.py. The app keeps the original IOManager constructor, history tables,
 search prompts, report menu, PriorityRule inheritance and repository behaviour.
 The alternate channel-based I/O implementation is no longer used.
 
@@ -315,4 +314,4 @@ Legacy `test_io_manager.py`, `test_complaint_ids.py`, `test_logic_manager.py` an
 `testscript.py` were retired because they target replaced interfaces. Coverage is
 provided by the matching reference tests and retained teammate storage tests.
 The CI workflow runs these same commands; a hosted CI result requires a push.
-No live Gemini request or final Docker validation is claimed by these results.
+Docker testing also passed all 41 unit tests, including two Docker storage tests, plus the pipeline and input checks. A new container could read the reports saved by the previous container. These tests did not call the real Gemini API.

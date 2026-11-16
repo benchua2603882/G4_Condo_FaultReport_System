@@ -21,7 +21,7 @@ jobs:
       - name: Install dependencies
         run: python -m pip install -r requirements.txt
       - name: Run OOP AI admin and storage tests
-        run: python -m unittest -v test_ai_manager test_oop test_admin_features test_data_manager_storage
+        run: python -m unittest -v test_ai_manager test_oop test_admin_features test_data_manager_storage test_docker_persistence
       - name: Run complete offline pipeline
         run: python test_pipeline.py
       - name: Run input validation checks

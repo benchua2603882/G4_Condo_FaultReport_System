@@ -1,10 +1,15 @@
-# Only application source, tests and dependency definitions enter the build.
+# Include only the app files, tests and files needed to build the image.
 *
 !Dockerfile
 !requirements.txt
 !main.py
+!application.py
+!contracts.py
+!authentication.py
 !io_manager.py
 !ai_manager.py
 !logic_manager.py
 !data_manager.py
-!testscript.py
+!report_policy.py
+!activity_history.py
+!test*.py

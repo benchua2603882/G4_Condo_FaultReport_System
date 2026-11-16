@@ -1,5 +1,7 @@
 """Create and start the Condo application."""
 
+import os
+
 from ai_manager import AIManager
 from application import ReportApplication
 from authentication import DemoAuthenticator
@@ -12,8 +14,11 @@ class ApplicationFactory:
     """Create the managers and connect them to the application."""
 
     @staticmethod
-    def create(reports_file=DEFAULT_REPORTS_FILE):
+    def create(reports_file=None):
         """Return an application with all its required managers."""
+        # Docker can select mounted storage; explicit paths still take priority.
+        if reports_file is None:
+            reports_file = os.getenv("REPORTS_FILE", str(DEFAULT_REPORTS_FILE))
         return ReportApplication(
             io=IOManager(),
             ai=AIManager(),
