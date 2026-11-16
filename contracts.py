@@ -16,6 +16,7 @@ class AnalysisProvider(ABC):
         """Return parsed provider output or raise on unavailable/invalid output."""
         raise NotImplementedError
 
+
 class PriorityRule(ABC):
     """Return a priority when applicable, otherwise None, without mutation."""
 

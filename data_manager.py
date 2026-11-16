@@ -8,12 +8,10 @@ from tempfile import NamedTemporaryFile
 from contracts import ReportRepository
 from report_policy import ReportPolicy
 
+
 DEFAULT_REPORTS_FILE = Path(__file__).resolve().parent / "reports.json"
 COMPLAINT_STATUSES = ("Contractor contacted", "Pending Action", "Resolved")
 
-# Docker supplies its mounted storage path; native runs keep the project default.
-REPORTS_FILE = Path(os.getenv("REPORTS_FILE", Path(__file__).resolve().parent / "reports.json"))
-COMPLAINT_STATUSES = ("Contractor contacted", "Pending Action", "Resolved")
 
 class JsonReportRepository(ReportRepository):
     """Persist the existing list records at this instance's selected JSON path."""
@@ -81,6 +79,7 @@ class JsonReportRepository(ReportRepository):
                     highest_number = max(highest_number, int(match.group(1)))
 
         return f"complaint_{highest_number + 1:03d}"
+
     def save_report(self, complaint, actor="Resident"):
         """Save an accepted or explicitly pending-manual-review seven-item complaint.
 
@@ -109,7 +108,7 @@ class JsonReportRepository(ReportRepository):
         reports.append(saved)
         self.write_reports(reports)
         return saved
-    
+
     def write_reports(self, reports):
         """Write a report list atomically, preserving the old file on failure.
 
@@ -133,6 +132,69 @@ class JsonReportRepository(ReportRepository):
             if temporary_path is not None and temporary_path.exists():
                 temporary_path.unlink()
 
+    def update_complaint_status(self, complaint_id, status):
+        """Update one accepted report by ID and persist its new status.
+
+        Accept one of COMPLAINT_STATUSES. Return the updated record; raise
+        ValueError for an unknown ID, invalid status, or unaccepted record.
+        File errors propagate without replacing the original data.
+        """
+
+        if status not in COMPLAINT_STATUSES:
+            raise ValueError("Invalid complaint status.")
+        reports = self.load_reports()
+        index = self.find_report_index(reports, complaint_id)
+        report = reports[index]
+        if not self._policy.is_accepted_report(report):
+            raise ValueError("Review and approve this complaint using admin option 3 before changing its status.")
+        previous_status = report[6].get("status")
+        if previous_status == status:
+            return report
+        # Improved feature: the status change and activity entry share one write.
+        updated = self._history.record(report, "Status changed", "Admin", {
+            "status": {"old": previous_status, "new": status},
+        }, previous=report)
+        updated[6]["status"] = status
+        reports[index] = updated
+        self.write_reports(reports)
+        return updated
+
+    # Improved feature: combine text search and optional report filters.
+    def filter_reports(self, priority=None, *, query="", status=None, category=None,
+                       date_from=None, date_to=None):
+        """Return case-insensitive matches; all supplied criteria must match.
+
+        Search current ID/contact/description/summary fields, not old history.
+        Dates are inclusive submission dates (YYYY-MM-DD as recorded locally).
+        Missing or invalid legacy dates are excluded only when dates are filtered.
+        Reading/filtering never writes to the file. Invalid criteria raise ValueError.
+        """
+        start = self._parse_filter_date(date_from)
+        end = self._parse_filter_date(date_to)
+        if start and end and start > end:
+            raise ValueError("Start date must not be after end date.")
+        query = query.strip().casefold()
+        matches = []
+        for report in self.load_reports():
+            if not isinstance(report, list) or len(report) != 7 or not isinstance(report[6], dict):
+                continue
+            details = report[6]
+            if any(value and str(details.get(field, "")).casefold() != value.strip().casefold()
+                   for field, value in (("priority", priority), ("status", status), ("fault_category", category))):
+                continue
+            searchable = [*report[:4], details.get("issue_summary", "")]
+            if query and not any(query in str(value).casefold() for value in searchable):
+                continue
+            if start or end:
+                try:
+                    submitted = self._parse_filter_date(str(report[5])[:10])
+                except ValueError:
+                    continue
+                if submitted is None or (start and submitted < start) or (end and submitted > end):
+                    continue
+            matches.append(report)
+        return matches
+
     def _parse_filter_date(self, value):
         """Return an optional ISO date, rejecting ambiguous or invalid values."""
         if not value:
@@ -140,13 +202,13 @@ class JsonReportRepository(ReportRepository):
         if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", value):
             raise ValueError("Use dates in YYYY-MM-DD format.")
         return date.fromisoformat(value)
-                 
+
     def get_report(self, complaint_id):
         """Return a saved seven-item report by ID, or raise ValueError if missing."""
-            
+
         reports = self.load_reports()
         return reports[self.find_report_index(reports, complaint_id)]
-    
+
     def update_report(self, complaint):
         """Replace an existing report with an accepted or pending-review record.
 
@@ -185,73 +247,11 @@ class JsonReportRepository(ReportRepository):
         self.write_reports(reports)
         return deleted
 
-    def update_complaint_status(self, complaint_id, status):
-        """Update one accepted report by ID and persist its new status.
-
-        Accept one of COMPLAINT_STATUSES. Return the updated record; raise
-        ValueError for an unknown ID, invalid status, or unaccepted record.
-        File errors propagate without replacing the original data.
-        """
-
-        if status not in COMPLAINT_STATUSES:
-            raise ValueError("Invalid complaint status.")
-        reports = self.load_reports()
-        index = self.find_report_index(reports, complaint_id)
-        report = reports[index]
-        if not self._policy.is_accepted_report(report):
-            raise ValueError("Review and approve this complaint using admin option 3 before changing its status.")
-        previous_status = report[6].get("status")
-        if previous_status == status:
-            return report
-        # Improved feature: the status change and activity entry share one write.
-        updated = self._history.record(report, "Status changed", "Admin", {
-            "status": {"old": previous_status, "new": status},
-        }, previous=report)
-        updated[6]["status"] = status
-        reports[index] = updated
-        self.write_reports(reports)
-        return updated
-
-    def filter_reports(self, priority=None, *, query="", status=None, category=None,
-                           date_from=None, date_to=None):
-        """Return case-insensitive matches; all supplied criteria must match.
-
-        Search current ID/contact/description/summary fields, not old history.
-        Dates are inclusive submission dates (YYYY-MM-DD as recorded locally).
-        Missing or invalid legacy dates are excluded only when dates are filtered.
-        Reading/filtering never writes to the file. Invalid criteria raise ValueError.
-        """
-        start = self._parse_filter_date(date_from)
-        end = self._parse_filter_date(date_to)
-        if start and end and start > end:
-            raise ValueError("Start date must not be after end date.")
-        query = query.strip().casefold()
-        matches = []
-        for report in self.load_reports():
-            if not isinstance(report, list) or len(report) != 7 or not isinstance(report[6], dict):
-                continue
-            details = report[6]
-            if any(value and str(details.get(field, "")).casefold() != value.strip().casefold()
-                    for field, value in (("priority", priority), ("status", status), ("fault_category", category))):
-                continue
-            searchable = [*report[:4], details.get("issue_summary", "")]
-            if query and not any(query in str(value).casefold() for value in searchable):
-                continue
-            if start or end:
-                try:
-                    submitted = self._parse_filter_date(str(report[5])[:10])
-                except ValueError:
-                    continue
-                if submitted is None or (start and submitted < start) or (end and submitted > end):
-                    continue
-            matches.append(report)
-        return matches
-
     def load_pending_reviews(self):
         """Return complaints in reports.json that still need manual review."""
-    
+
         return [report for report in self.load_reports() if self._policy.is_pending_review(report)]
-    
+
     def approve_pending_review(self, report):
         """Replace one pending record with its approved result in a single atomic write."""
 
@@ -271,4 +271,3 @@ class JsonReportRepository(ReportRepository):
         reports[index] = approved
         self.write_reports(reports)
         return approved
-    

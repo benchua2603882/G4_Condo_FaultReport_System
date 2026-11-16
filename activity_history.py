@@ -1,3 +1,4 @@
+"""New feature: construct complaint activity entries without doing file I/O."""
 from copy import deepcopy
 from datetime import datetime
 
@@ -18,15 +19,15 @@ class ActivityHistory:
         return deepcopy(changes)
 
     def record(self, report, action, actor, changes, previous=None):
-            """Return a copy with one timestamped event, preserve saved history."""
-            history = previous[6].get("history", []) if previous is not None else []
-            if not isinstance(history, list) or any(not isinstance(entry, dict) for entry in history):
-                raise ValueError("The stored complaint history is invalid.")
-            result = deepcopy(report)
-            result[6]["history"] = deepcopy(history) + [{
-                "timestamp": datetime.now().astimezone().isoformat(timespec="seconds"),
-                "action": action,
-                "actor": actor,
-                "changes": deepcopy(changes),
-            }]
-            return result
+        """Return a copy with one timestamped event, preserving saved history."""
+        history = previous[6].get("history", []) if previous is not None else []
+        if not isinstance(history, list) or any(not isinstance(entry, dict) for entry in history):
+            raise ValueError("The stored complaint history is invalid.")
+        result = deepcopy(report)
+        result[6]["history"] = deepcopy(history) + [{
+            "timestamp": datetime.now().astimezone().isoformat(timespec="seconds"),
+            "action": action,
+            "actor": actor,
+            "changes": deepcopy(changes),
+        }]
+        return result

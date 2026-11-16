@@ -1,15 +1,15 @@
-"""Complaint submission workflows using manager objects."""
+"""Application workflows depend on contracts rather than module globals."""
 import logging
 from pathlib import Path
 from contracts import Analyzer, Authenticator, FaultProcessor, ReportRepository, UserInterface
 
 
 class ReportApplication:
-    """Coordinate complaint submission through the I/O, AI, logic and data managers."""
+    """Coordinate the existing menus and complaint workflow using collaborators."""
 
     def __init__(self, io: UserInterface, ai: Analyzer, logic: FaultProcessor,
                  data: ReportRepository, authenticator: Authenticator):
-        """Associate  managers with this app without constructing them."""
+        """Associate injected managers with this app without constructing them."""
         self._io = io
         self._ai = ai
         self._logic = logic
@@ -86,188 +86,6 @@ class ReportApplication:
 
         return complaint
 
-
-    def pending_review_count(self):
-        """New feature: reload the admin notification count; None means unavailable."""
-        try:
-            return len(self._data.load_pending_reviews())
-        except (OSError, ValueError) as error:
-            self._io.show_message(f"Unable to check pending reviews: {error}")
-            return None
-
-    def select_report(self, reports):
-        """Prompt for an existing report ID and load its current saved record.
-
-        Retry IDs missing from the supplied list. Return None on Go back or
-        storage errors. Reload the selected record before editing or deleting it.
-        """
-
-        while True:
-            complaint_id = self._io.collect_report_id()
-            if complaint_id is None:
-                return None
-            try:
-                self._data.find_report_index(reports, complaint_id)
-            except ValueError:
-                self._io.show_message("Complaint ID not found. Please try again.")
-                continue
-            try:
-                return self._data.get_report(complaint_id)
-            except (OSError, ValueError) as error:
-                self._io.show_message(f"Unable to load complaint: {error}")
-                return None
-
-    def view_reports(self):
-        """Display saved reports and offer CRUD, history and search actions.
-
-        Reload after each update. After viewing one ID, show only the action menu
-        instead of immediately printing all reports again. Return None on Go back
-        or file errors. Input and output stay in the I/O manager.
-        """
-
-        show_all_reports = True
-        while True:
-            try:
-                reports = self._data.load_reports()
-            except (OSError, ValueError) as error:
-                self._io.show_message(f"Unable to load reports: {error}")
-                return
-
-            if show_all_reports:
-                self._io.show_reports(reports)
-            choice = self._io.show_report_menu()
-            if choice == "7":
-                return
-            if not reports:
-                self._io.show_message("No saved complaints are available. Submit a complaint from the main menu.")
-                continue
-            if choice == "1":
-                completed = self.update_report_status(reports)
-            elif choice == "2":
-                completed = self.view_one_report(reports)
-            elif choice == "3":
-                completed = self.edit_report(reports)
-            elif choice == "4":
-                completed = self.remove_report(reports)
-            elif choice == "5":
-                completed = self.view_report_history(reports)
-            elif choice == "6":
-                completed = self.search_reports()
-            else:
-                continue
-            if not completed:
-                return
-            show_all_reports = choice not in ("2", "5", "6")
-
-
-    # New feature: display history for the selected complaint.
-    def view_report_history(self, reports):
-        """Display the selected complaint's history using the shared table style."""
-        report = self.select_report(reports)
-        if report is None:
-            return False
-        self._io.show_report_history(report)
-        return True
-
-
-    def view_one_report(self, reports):
-        """Display one report selected by ID; return False if selection is cancelled."""
-
-        report = self.select_report(reports)
-        if report is None:
-            return False
-        self._io.show_reports([report])
-        return True
-
-
-    def edit_report(self, reports):
-        """Edit a selected complaint and save only after any fault changes are accepted.
-
-        Contact-only edits preserve analysis/status. Description or image edits
-        rerun AI and business rules and reset status to Pending Action. If AI is
-        unavailable, offer manual admin approval. Failed or cancelled edits keep
-        the original report intact. Return False on Go back.
-        """
-
-        original = self.select_report(reports)
-        if original is None:
-            return False
-        draft = self._io.collect_report_edits(original)
-        if draft is None:
-            return False
-        if draft == original:
-            self._io.show_message("No changes to save.")
-            return True
-        if draft[3:5] != original[3:5]:
-            self._io.show_message("Analyzing the updated complaint with Gemini...")
-            try:
-                processed = self.analyze_report(draft[:6])
-            except Exception as error:
-                self._io.show_message(f"Analysis failed; original complaint kept: {error}")
-                return True
-            if processed.get("manual_input_required"):
-                self._io.show_message("AI analysis is unavailable. Review this edit manually or go back to keep the original.")
-                try:
-                    processed = self.manually_analyze_report(draft)
-                except ValueError as error:
-                    self._io.show_message(f"Invalid review; original complaint kept: {error}")
-                    return True
-                if processed is None:
-                    self._io.show_message("Changes not saved. Original complaint kept.")
-                    return True
-            if not processed["accepted"]:
-                self._io.show_message(processed["reason"])
-                self._io.show_message("Changes not saved. Original complaint kept.")
-                return True
-            draft[6] = processed
-        try:
-            self._data.update_report(draft)
-        except (OSError, ValueError) as error:
-            self._io.show_message(f"Unable to save changes: {error}")
-            return False
-        self._io.show_message(f"Complaint {draft[0]} updated successfully.")
-        return True
-
-    def update_report_status(self, reports):
-        """Select a saved complaint by ID and persist the selected status.
-
-        Take the currently loaded report list and retry unknown IDs. Return True
-        after saving, or False for Go back or a storage error.
-        """
-
-        report = self.select_report(reports)
-        if report is None:
-            return False
-        complaint_id = report[0]
-
-        status = self._io.choose_complaint_status()
-        if status is None:
-            return False
-        try:
-            self._data.update_complaint_status(complaint_id, status)
-        except (OSError, ValueError) as error:
-            self._io.show_message(f"Unable to update complaint status: {error}")
-            return False
-        self._io.show_message(f"Complaint {complaint_id} status updated to {status}.")
-        return True
-
-    def remove_report(self, reports):
-        """Delete a selected report only after confirmation; return False on Go back."""
-
-        report = self.select_report(reports)
-        if report is None:
-            return False
-        if not self._io.confirm_report_deletion(report):
-            self._io.show_message("Deletion cancelled.")
-            return True
-        try:
-            self._data.delete_report(report[0])
-        except (OSError, ValueError) as error:
-            self._io.show_message(f"Unable to delete complaint: {error}")
-            return False
-        self._io.show_message(f"Complaint {report[0]} deleted.")
-        return True
-
     def manually_analyze_report(self, complaint):
         """Collect approved admin details and apply the usual severity/routing rules.
 
@@ -321,6 +139,200 @@ class ReportApplication:
             self._io.show_message(f"Complaint {complaint_id} approved and saved with Pending Action status.")
             self._io.show_message(processed["alert"])
 
+    def view_reports(self):
+        """Display saved reports and offer CRUD, history and search actions.
+
+        Reload after each update. After viewing one ID, show only the action menu
+        instead of immediately printing all reports again. Return None on Go back
+        or file errors. Input and output stay in the I/O manager.
+        """
+
+        show_all_reports = True
+        while True:
+            try:
+                reports = self._data.load_reports()
+            except (OSError, ValueError) as error:
+                self._io.show_message(f"Unable to load reports: {error}")
+                return
+
+            if show_all_reports:
+                self._io.show_reports(reports)
+            choice = self._io.show_report_menu()
+            if choice == "7":
+                return
+            if not reports:
+                self._io.show_message("No saved complaints are available. Submit a complaint from the main menu.")
+                continue
+            if choice == "1":
+                completed = self.update_report_status(reports)
+            elif choice == "2":
+                completed = self.view_one_report(reports)
+            elif choice == "3":
+                completed = self.edit_report(reports)
+            elif choice == "4":
+                completed = self.remove_report(reports)
+            elif choice == "5":
+                completed = self.view_report_history(reports)
+            elif choice == "6":
+                completed = self.search_reports()
+            else:
+                continue
+            if not completed:
+                return
+            show_all_reports = choice not in ("2", "5", "6")
+
+    # New features: admin-only history and search routes from the reports menu.
+    def view_report_history(self, reports):
+        """Display the selected complaint's history using the shared table style."""
+        report = self.select_report(reports)
+        if report is None:
+            return False
+        self._io.show_report_history(report)
+        return True
+
+    def search_reports(self):
+        """Collect combined filters, query saved reports and display matching rows."""
+        filters = self._io.collect_report_filters(self._ai.categories)
+        if filters is None:
+            return False
+        try:
+            matches = self._data.filter_reports(**filters)
+        except (OSError, ValueError) as error:
+            self._io.show_message(f"Unable to search reports: {error}")
+            return True
+        self._io.show_message(f"Search results: {len(matches)} complaint(s) matched.")
+        if matches:
+            self._io.show_reports(matches)
+        else:
+            self._io.show_message("No complaints match these filters. Try fewer filters or another keyword.")
+        return True
+
+    def pending_review_count(self):
+        """New feature: reload the admin notification count; None means unavailable."""
+        try:
+            return len(self._data.load_pending_reviews())
+        except (OSError, ValueError) as error:
+            self._io.show_message(f"Unable to check pending reviews: {error}")
+            return None
+
+    def select_report(self, reports):
+        """Prompt for an existing report ID and load its current saved record.
+
+        Retry IDs missing from the supplied list. Return None on Go back or
+        storage errors. Reload the selected record before editing or deleting it.
+        """
+
+        while True:
+            complaint_id = self._io.collect_report_id()
+            if complaint_id is None:
+                return None
+            try:
+                self._data.find_report_index(reports, complaint_id)
+            except ValueError:
+                self._io.show_message("Complaint ID not found. Please try again.")
+                continue
+            try:
+                return self._data.get_report(complaint_id)
+            except (OSError, ValueError) as error:
+                self._io.show_message(f"Unable to load complaint: {error}")
+                return None
+
+    def view_one_report(self, reports):
+        """Display one report selected by ID; return False if selection is cancelled."""
+
+        report = self.select_report(reports)
+        if report is None:
+            return False
+        self._io.show_reports([report])
+        return True
+
+    def edit_report(self, reports):
+        """Edit a selected complaint and save only after any fault changes are accepted.
+
+        Contact-only edits preserve analysis/status. Description or image edits
+        rerun AI and business rules and reset status to Pending Action. If AI is
+        unavailable, offer manual admin approval. Failed or cancelled edits keep
+        the original report intact. Return False on Go back.
+        """
+
+        original = self.select_report(reports)
+        if original is None:
+            return False
+        draft = self._io.collect_report_edits(original)
+        if draft is None:
+            return False
+        if draft == original:
+            self._io.show_message("No changes to save.")
+            return True
+        if draft[3:5] != original[3:5]:
+            self._io.show_message("Analyzing the updated complaint with Gemini...")
+            try:
+                processed = self.analyze_report(draft[:6])
+            except Exception as error:
+                self._io.show_message(f"Analysis failed; original complaint kept: {error}")
+                return True
+            if processed.get("manual_input_required"):
+                self._io.show_message("AI analysis is unavailable. Review this edit manually or go back to keep the original.")
+                try:
+                    processed = self.manually_analyze_report(draft)
+                except ValueError as error:
+                    self._io.show_message(f"Invalid review; original complaint kept: {error}")
+                    return True
+                if processed is None:
+                    self._io.show_message("Changes not saved. Original complaint kept.")
+                    return True
+            if not processed["accepted"]:
+                self._io.show_message(processed["reason"])
+                self._io.show_message("Changes not saved. Original complaint kept.")
+                return True
+            draft[6] = processed
+        try:
+            self._data.update_report(draft)
+        except (OSError, ValueError) as error:
+            self._io.show_message(f"Unable to save changes: {error}")
+            return False
+        self._io.show_message(f"Complaint {draft[0]} updated successfully.")
+        return True
+
+    def remove_report(self, reports):
+        """Delete a selected report only after confirmation; return False on Go back."""
+
+        report = self.select_report(reports)
+        if report is None:
+            return False
+        if not self._io.confirm_report_deletion(report):
+            self._io.show_message("Deletion cancelled.")
+            return True
+        try:
+            self._data.delete_report(report[0])
+        except (OSError, ValueError) as error:
+            self._io.show_message(f"Unable to delete complaint: {error}")
+            return False
+        self._io.show_message(f"Complaint {report[0]} deleted.")
+        return True
+
+    def update_report_status(self, reports):
+        """Select a saved complaint by ID and persist the selected status.
+
+        Take the currently loaded report list and retry unknown IDs. Return True
+        after saving, or False for Go back or a storage error.
+        """
+
+        report = self.select_report(reports)
+        if report is None:
+            return False
+        complaint_id = report[0]
+
+        status = self._io.choose_complaint_status()
+        if status is None:
+            return False
+        try:
+            self._data.update_complaint_status(complaint_id, status)
+        except (OSError, ValueError) as error:
+            self._io.show_message(f"Unable to update complaint status: {error}")
+            return False
+        self._io.show_message(f"Complaint {complaint_id} status updated to {status}.")
+        return True
 
     def run(self):
         """Start the application and handle menu choices until the user quits.

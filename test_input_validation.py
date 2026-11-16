@@ -3,7 +3,9 @@
 import sys
 from unittest.mock import patch
 
-import io_manager
+from io_manager import IOManager
+
+io_manager = IOManager()
 
 
 def test_input_validation():

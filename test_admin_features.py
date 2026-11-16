@@ -1,12 +1,11 @@
-"""Offline tests for admin notifications and the history and search menus."""
+"""Offline tests for new notifications, activity history, and report search."""
+import json
 import unittest
+from copy import deepcopy
+from datetime import datetime
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import Mock, patch
-
-import json
-from copy import deepcopy
-from datetime import datetime
 
 from application import ReportApplication
 from authentication import DemoAuthenticator
@@ -48,29 +47,6 @@ class AdminFeatureTests(unittest.TestCase):
         return [f"complaint_{number:03d}", "Test Resident", "+6591234567",
                 "Pipe leaking", "no_image", submitted, details]
 
-    def test_notification_refreshes_after_admin_action(self):
-        """Login shows the pending count; the next menu reflects an approval."""
-        self.repo.save_report(self.report(pending=True))
-        app = self.make_app(["2", "admin123", "2", "quit"])
-        with patch("application.logging.basicConfig"), patch.object(app, "view_reports", side_effect=lambda: self.repo.approve_pending_review(self.report())):
-            app.run()
-        output = "\n".join(self.messages)
-        self.assertIn("[ATTENTION] 1 complaint(s)", output)
-        self.assertIn("No complaints are awaiting manual approval.", output)
-        self.assertIn("approval (1)", output)
-        self.assertIn("approval (0)", output)
-
-    def test_residents_and_failed_logins_do_not_receive_notification(self):
-        """Admin-only counts and actions remain hidden until authentication succeeds."""
-        for answers in (["1", "2", "3", "quit"], ["2", "wrong", "quit"]):
-            app = self.make_app(answers)
-            with patch("application.logging.basicConfig"), patch.object(self.repo, "load_pending_reviews") as pending, patch.object(app, "view_reports") as view:
-                app.run()
-                pending.assert_not_called()
-                view.assert_not_called()
-        self.assertNotIn("[ATTENTION]", "\n".join(self.messages))
-
-    
     def test_submission_events_and_actors(self):
         """Accepted and AI-failure submissions save one event and the right role."""
         for role, result in [("resident", self.analysis), ("admin", {"ai_available": False})]:
@@ -195,6 +171,27 @@ class AdminFeatureTests(unittest.TestCase):
             with self.subTest(filters=filters), self.assertRaises(ValueError):
                 self.repo.filter_reports(**filters)
 
+    def test_notification_refreshes_after_admin_action(self):
+        """Login shows the pending count; the next menu reflects an approval."""
+        self.repo.save_report(self.report(pending=True))
+        app = self.make_app(["2", "admin123", "2", "quit"])
+        with patch("application.logging.basicConfig"), patch.object(app, "view_reports", side_effect=lambda: self.repo.approve_pending_review(self.report())):
+            app.run()
+        output = "\n".join(self.messages)
+        self.assertIn("[ATTENTION] 1 complaint(s)", output)
+        self.assertIn("No complaints are awaiting manual approval.", output)
+        self.assertIn("approval (1)", output)
+        self.assertIn("approval (0)", output)
+
+    def test_residents_and_failed_logins_do_not_receive_notification(self):
+        """Admin-only counts and actions remain hidden until authentication succeeds."""
+        for answers in (["1", "2", "3", "quit"], ["2", "wrong", "quit"]):
+            app = self.make_app(answers)
+            with patch("application.logging.basicConfig"), patch.object(self.repo, "load_pending_reviews") as pending, patch.object(app, "view_reports") as view:
+                app.run()
+                pending.assert_not_called()
+                view.assert_not_called()
+        self.assertNotIn("[ATTENTION]", "\n".join(self.messages))
 
     def test_notification_read_failure_is_not_reported_as_zero(self):
         """Storage errors leave the menu usable and explicitly mark count unavailable."""

@@ -1,7 +1,8 @@
 """Fault rules and priorities, independent of terminal, storage and Gemini."""
+from contracts import PriorityRule
 
 
-class EmergencyPriorityRule:
+class EmergencyPriorityRule(PriorityRule):
     """Specialise priority selection for fire or severe shared-area hazards."""
 
     def evaluate(self, report):
@@ -13,7 +14,7 @@ class EmergencyPriorityRule:
         return None
 
 
-class ScorePriorityRule:
+class ScorePriorityRule(PriorityRule):
     """Select a priority when severity reaches a configured minimum."""
 
     def __init__(self, minimum, priority):

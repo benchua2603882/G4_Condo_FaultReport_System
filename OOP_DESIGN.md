@@ -3,7 +3,8 @@
 This branch refactors the application and adds admin pending-review notifications,
 complaint activity history, and report search/filtering. The original complaint
 fields, Gemini request, business rules, CRUD operations and manual review remain.
-Docker changes and CI setup are outside the current scope.
+Offline CI is configured in `.github/workflows/tests.yml`. Docker changes remain
+a separate pending integration step and must be reverified on the final branch.
 
 ## Migration from Part 1
 
@@ -293,3 +294,25 @@ time, and deleting the highest complaint ID may allow its reuse, as before.
 This document describes the current OOP implementation and three admin improvements,
 not a finished Part 2 submission. Confirm the advanced-feature requirement against
 the rubric separately; Docker, CI and final submission documents remain deferred.
+
+## Reference alignment verification on 16 November 2026
+
+The ten production Python modules now match the original appNEW reference source
+byte-for-byte. This restores the reference IOManager constructor, history tables,
+search prompts, report menu, PriorityRule inheritance and repository behaviour.
+The alternate channel-based I/O implementation is no longer used.
+
+Verified locally with simulated AI and temporary JSON files:
+
+```powershell
+python -m unittest -v test_ai_manager test_oop test_admin_features test_data_manager_storage
+python test_pipeline.py
+python test_input_validation.py
+```
+
+All 39 unit tests, nine offline pipeline groups and input validation passed.
+Legacy `test_io_manager.py`, `test_complaint_ids.py`, `test_logic_manager.py` and
+`testscript.py` were retired because they target replaced interfaces. Coverage is
+provided by the matching reference tests and retained teammate storage tests.
+The CI workflow runs these same commands; a hosted CI result requires a push.
+No live Gemini request or final Docker validation is claimed by these results.
