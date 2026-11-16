@@ -30,5 +30,3 @@ class ActivityHistory:
                 "changes": deepcopy(changes),
             }]
             return result
-
-print("hello")
