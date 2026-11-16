@@ -4,6 +4,10 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import Mock, patch
 
+import json
+from copy import deepcopy
+from datetime import datetime
+
 from application import ReportApplication
 from authentication import DemoAuthenticator
 from data_manager import JsonReportRepository
@@ -65,6 +69,132 @@ class AdminFeatureTests(unittest.TestCase):
                 pending.assert_not_called()
                 view.assert_not_called()
         self.assertNotIn("[ATTENTION]", "\n".join(self.messages))
+
+    
+    def test_submission_events_and_actors(self):
+        """Accepted and AI-failure submissions save one event and the right role."""
+        for role, result in [("resident", self.analysis), ("admin", {"ai_available": False})]:
+            app = self.make_app(["Test Resident", "91234567", "Pipe leaking", "n"])
+            self.ai.analyze_complaint.return_value = result
+            saved = app.process_new_report(role)
+            self.assertEqual(self.repo.get_report(saved[0]), saved)
+            event, = saved[6]["history"]
+            self.assertEqual(event["actor"], role.title())
+            self.assertEqual(event["action"], "Submitted")
+            self.assertEqual(event["changes"]["status"]["new"], saved[6]["status"])
+            self.assertIsNotNone(datetime.fromisoformat(event["timestamp"]).tzinfo)
+
+    def test_approval_edit_and_status_keep_history_after_restart(self):
+        """Replacing analysis retains prior history and records old/new values."""
+        pending = self.repo.save_report(self.report(pending=True))
+        approved = self.repo.approve_pending_review(self.report())
+        draft = deepcopy(approved)
+        draft[1] = "Updated Resident"
+        draft[3] = "Lift stopped"
+        draft[6] = dict(approved[6], fault_category="lift")
+        draft[6].pop("history")
+        updated = self.repo.update_report(draft)
+        final = self.repo.update_complaint_status(updated[0], "Resolved")
+        history = JsonReportRepository(self.path).get_report(final[0])[6]["history"]
+        self.assertEqual([h["action"] for h in history],
+                         ["Submitted", "Manually approved", "Complaint edited", "Status changed"])
+        self.assertEqual(history[:1], pending[6]["history"])
+        self.assertEqual(history[1]["changes"]["status"],
+                         {"old": "Pending Manual Review", "new": "Pending Action"})
+        self.assertEqual(history[2]["changes"]["description"],
+                         {"old": "Pipe leaking", "new": "Lift stopped"})
+        self.assertEqual(history[3]["changes"]["status"]["new"], "Resolved")
+        self.assertNotIn("history", draft[6])
+
+    def test_failed_writes_preserve_record_history_and_draft(self):
+        """Submission, edits, approval and status events are atomic with their data."""
+        accepted = self.repo.save_report(self.report())
+        pending = self.repo.save_report(self.report(2, pending=True))
+        edited = deepcopy(accepted)
+        edited[1] = "Updated Resident"
+        submitted = self.report(3)
+        approved = self.report(2)
+        draft_copies = deepcopy([edited, submitted, approved])
+        before = self.path.read_bytes()
+        actions = [lambda: self.repo.save_report(submitted),
+                   lambda: self.repo.update_report(edited),
+                   lambda: self.repo.approve_pending_review(approved),
+                   lambda: self.repo.update_complaint_status(accepted[0], "Resolved")]
+        for operation in actions:
+            with self.subTest(operation=operation), patch("data_manager.os.replace", side_effect=OSError("Disk full")):
+                with self.assertRaises(OSError):
+                    operation()
+            self.assertEqual(self.path.read_bytes(), before)
+            self.assertEqual([edited, submitted, approved], draft_copies)
+            self.assertFalse(list(self.path.parent.glob("reports-*.tmp")))
+        self.assertEqual(self.repo.load_pending_reviews(), [pending])
+
+    def test_legacy_reports_are_not_given_invented_events(self):
+        """Read-only legacy views leave bytes intact; the next change starts history."""
+        legacy = self.report()
+        legacy[6].pop("status")
+        self.path.write_text(json.dumps([legacy]), encoding="utf-8")
+        before = self.path.read_bytes()
+        self.make_app()
+        self.io.show_report_history(self.repo.get_report(legacy[0]))
+        self.assertIn("No activity history recorded", "\n".join(self.messages))
+        self.assertEqual(self.path.read_bytes(), before)
+        updated = self.repo.update_complaint_status(legacy[0], "Resolved")
+        self.assertEqual(len(updated[6]["history"]), 1)
+        self.assertEqual(updated[6]["history"][0]["action"], "Status changed")
+
+    def test_noop_and_forged_draft_history_do_not_replace_saved_history(self):
+        """Selecting the same status or supplying a changed history creates no event."""
+        original = self.repo.save_report(self.report())
+        before = self.path.read_bytes()
+        self.repo.update_complaint_status(original[0], "Pending Action")
+        draft = deepcopy(original)
+        draft[6]["history"] = []
+        self.assertEqual(self.repo.update_report(draft), original)
+        self.assertEqual(self.path.read_bytes(), before)
+        draft[1] = "Changed Name"
+        updated = self.repo.update_report(draft)
+        self.assertEqual(updated[6]["history"][:-1], original[6]["history"])
+
+    def test_deleting_report_removes_its_history(self):
+        """This basic feature keeps no separate archive of deleted complaints."""
+        saved = self.repo.save_report(self.report())
+        self.assertEqual(self.repo.delete_report(saved[0]), saved)
+        self.assertEqual(JsonReportRepository(self.path).load_reports(), [])
+
+    def test_combined_search_and_filter_are_read_only(self):
+        """Case-insensitive criteria combine with AND and ignore historical text."""
+        first = self.repo.save_report(self.report())
+        second = self.repo.save_report(self.report(2, pending=True))
+        draft = deepcopy(first)
+        draft[1] = "New Name"
+        draft[3] = "Repaired pipe"
+        first = self.repo.update_report(draft)
+        before = self.path.read_bytes()
+        matches = self.repo.filter_reports("medium", query="NEW NAME", status="pending action",
+                                          category="PLUMBING", date_from="2026-11-04", date_to="2026-11-04")
+        self.assertEqual(matches, [first])
+        self.assertEqual(self.repo.filter_reports(query="complaint_002"), [second])
+        self.assertEqual(self.repo.filter_reports(query="+659123"), [first, second])
+        self.assertEqual(self.repo.filter_reports(query="water leaking", status="Pending Action"), [first])
+        self.assertEqual(self.repo.filter_reports(query="Test Resident", status="Pending Action"), [])
+        self.assertEqual(self.repo.filter_reports(status="Pending Manual Review"), [second])
+        self.assertEqual(self.repo.filter_reports(priority="HIGH"), [])
+        self.assertEqual(self.path.read_bytes(), before)
+
+    def test_date_boundaries_invalid_ranges_and_legacy_dates(self):
+        """Date filters are inclusive and do not crash on old non-ISO timestamps."""
+        first = self.repo.save_report(self.report(submitted="2026-11-01T23:59:59+08:00"))
+        second = self.repo.save_report(self.report(2, submitted="2026-11-04T00:00:00+08:00"))
+        legacy = self.repo.save_report(self.report(3, submitted="unknown"))
+        self.assertEqual(self.repo.filter_reports(date_from="2026-11-01", date_to="2026-11-04"), [first, second])
+        self.assertEqual(self.repo.filter_reports(date_from="2026-11-04"), [second])
+        self.assertEqual(self.repo.filter_reports(), [first, second, legacy])
+        for filters in [dict(date_from="2026-02-30"), dict(date_to="20261104"),
+                        dict(date_from="2026-11-05", date_to="2026-11-04")]:
+            with self.subTest(filters=filters), self.assertRaises(ValueError):
+                self.repo.filter_reports(**filters)
+
 
     def test_notification_read_failure_is_not_reported_as_zero(self):
         """Storage errors leave the menu usable and explicitly mark count unavailable."""
